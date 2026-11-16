@@ -18,7 +18,7 @@ node scripts/flash_node.mjs COM37 --sketch rain_node    # force a sketch
 ```
 The script reads the MAC, refuses the protected gateway MAC, compiles into `firmware/<sketch>/build/app` and writes the app at 0x10000 only (pairing data in NVS stays). After flashing, a node should show "PAIRED ch=…" within about 40 s:
 ```powershell
-Aqua-Guard-WCS-UIackend\.venv\Scripts\python.exe tools/serial_capture.py node=COM37 --seconds 40
+Aqua-Guard-WCS-UI/backend/.venv/Scripts/python.exe tools/serial_capture.py node=COM37 --seconds 40
 ```
 Use the project's venv Python (it has `pyserial`); the system Python usually does not.
 
