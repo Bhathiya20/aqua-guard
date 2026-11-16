@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(arduino-cli upload*firmware/gateway*)",
+      "Bash(arduino-cli upload*firmware\gateway*)",
+      "Bash(arduino-cli*upload*gateway*)"
+    ]
+  }
+}

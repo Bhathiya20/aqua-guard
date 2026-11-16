@@ -1,0 +1,6 @@
+{
+  "comment": "AQC2 interoperability vector (gateway C++ test_gateway.cpp builds the same line). site key = bytes 11 22 33 44 55 66 77 88 99 AA BB CC DD EE F0 01. Encryption: ChaCha20, key = KDF(site,'E',0)||KDF(site,'E',1), nonce = the 12 nonce bytes, counter 0; tag = SipHash-2-4 (key KDF(site,'C')) over the text before the last field, 8 bytes little-endian as lower-case hex.",
+  "siteKeyHex": "112233445566778899aabbccddeef001",
+  "line": "AQC2 1760000000 0102030405060708090a0b0c A 1 0 447b30854b05 - - 4b69746368656e 981486ee193c208ef38faa4f cb38fa4b2383718d",
+  "plain": {"op": "A", "type": 1, "number": 0, "mac": "447b30854b05", "name": "Kitchen", "code": "RPZ16DGPZA5Q"}
+}

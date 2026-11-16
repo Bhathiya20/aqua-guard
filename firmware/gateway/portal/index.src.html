@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aqua Guard gateway</title>
+<style>
+:root{--bg:#f4f7fa;--card:#fff;--ink:#12212e;--mut:#5b6b7a;--line:#d9e1e8;--pri:#0b6fb8;--pri2:#095a96;--ok:#1a7f43;--bad:#b3261e;--warn:#9a6700}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1720;--card:#17222e;--ink:#e6edf3;--mut:#9fb0bf;--line:#2a3947;--pri:#4aa3e8;--pri2:#2f86c9;--ok:#4ac17a;--bad:#ff8a80;--warn:#e3b341}}
+*{box-sizing:border-box}body{margin:0;font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+main{max-width:640px;margin:0 auto;padding:16px}
+h1{font-size:1.3rem;margin:.2em 0}h2{font-size:1.1rem;margin:0 0 .5em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:12px 0}
+.steps{display:flex;gap:6px;margin:8px 0}.steps span{flex:1;text-align:center;font-size:.8rem;padding:6px 2px;border-radius:8px;background:var(--line);color:var(--mut)}.steps .on{background:var(--pri);color:#fff}.steps .done{background:var(--ok);color:#fff}
+label{display:block;font-size:.85rem;color:var(--mut);margin:.7em 0 .2em}
+input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-size:1rem}
+input[type=checkbox]{width:auto;margin-right:8px}.chk{display:flex;align-items:center;color:var(--ink);font-size:.95rem;margin:.6em 0}
+button{font:inherit;padding:12px 16px;border:0;border-radius:8px;background:var(--pri);color:#fff;cursor:pointer;min-height:44px}
+button:hover{background:var(--pri2)}button.sec{background:transparent;color:var(--pri);border:1px solid var(--pri)}button.bad{background:var(--bad);color:#fff}
+.btnlike{display:block;text-align:center;font-size:1.1rem;padding:16px;border-radius:8px;background:var(--pri);color:#fff;cursor:pointer;margin:8px 0}
+button.big{width:100%;font-size:1.1rem;padding:16px}button:disabled{opacity:.5}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1}
+.mut{color:var(--mut);font-size:.9rem}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:.78rem;background:var(--line)}.pill.ok{background:var(--ok);color:#fff}.pill.bad{background:var(--bad);color:#fff}.pill.warn{background:var(--warn);color:#fff}
+ul.list{list-style:none;margin:0;padding:0}ul.list li{padding:10px 4px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:center}
+ul.list li:last-child{border:0}.net{cursor:pointer}.net:hover{background:var(--bg)}
+.tabs{display:flex;gap:6px;margin-bottom:10px}.tabs button{flex:1;background:var(--line);color:var(--ink)}.tabs .on{background:var(--pri);color:#fff}
+.hide{display:none}.wait{border:2px dashed var(--pri);border-radius:12px;padding:14px;margin:10px 0}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--pri);border-radius:50%;animation:s 1s linear infinite;vertical-align:-2px;margin-right:6px}@keyframes s{to{transform:rotate(360deg)}}
+code{background:var(--bg);padding:1px 5px;border-radius:4px}
+.nav{display:flex;gap:6px;margin:8px 0}.nav button{flex:1;background:var(--line);color:var(--ink)}.nav .on{background:var(--pri);color:#fff}
+</style>
+</head>
+<body>
+<main>
+<h1>Aqua Guard gateway <span id="gwid" class="mut"></span></h1>
+<div id="hint" class="card warn hide">This looks like a captive-portal mini browser: the camera or file picker may not work here. If so, open <b>http://192.168.4.1</b> in your normal browser (Chrome / Safari) while connected to "AquaGuard WiFi".</div>
+<div id="app"><div class="card"><span class="spin"></span>Loading…</div></div>
+</main>
+<script>
+/*@@QR@@*/
+</script>
+<script>
+"use strict";
+var $ = function (s, r) { return (r || document).querySelector(s); };
+var state = { hello: null, token: null, step: 0, nav: "nodes", add: null, waiting: null, status: null, nodes: [], nearby: [], scan: null, sel: null, err: "" };
+try { state.token = sessionStorage.getItem("aqtok"); } catch (e) {}
+var pend = null;                                           // pairing link that arrived with the page (/add?...)
+try { if (location.search.indexOf("code=") >= 0 || location.search.indexOf("mac=") >= 0) pend = AquaQr.parse(location.href); } catch (e) { pend = { error: e.kind }; }
+
+function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function api(method, path, body) {
+  var h = {}; if (state.token) h["X-Auth"] = state.token;
+  var o = { method: method, headers: h };
+  if (body && method === "POST") { o.body = new URLSearchParams(body).toString(); h["Content-Type"] = "application/x-www-form-urlencoded"; }
+  else if (body) path += (path.indexOf("?") < 0 ? "?" : "&") + new URLSearchParams(body).toString();
+  return fetch(path, o).then(function (r) {
+    return r.json().catch(function () { return {}; }).then(function (j) {
+      if (r.status === 401 && j.error === "auth") { state.token = null; try { sessionStorage.removeItem("aqtok"); } catch (e) {} render(); }
+      if (!r.ok) { var e = new Error(j.error || r.status); e.code = j.error; e.status = r.status; throw e; }
+      return j;
+    });
+  });
+}
+var ERR = { duplicate_mac: "This node is already added.", bad_mac: "The MAC address is not valid (12 hex digits).", bad_code: "The pairing code is not valid (12 characters, letters and digits).",
+  registry_full: "No room for more nodes (limit reached).", not_found: "Node not found.", bad_argument: "A value is not valid.", wrong_password: "Wrong password.", locked: "Too many wrong tries: wait a minute.",
+  wifi_not_connected: "Connect to Wi-Fi first.", mqtt_not_configured: "Enter the MQTT broker first.", admin_password_not_set: "Set a gateway password first.",
+  password_6_to_64_chars: "The password needs 6 to 64 characters.", password_8_to_64_chars: "The Wi-Fi password needs 8 to 64 characters (or leave it empty for an open network).",
+  ssid_1_to_32_chars: "Enter the network name.", host_1_to_64_chars: "Enter the broker address.", bad_port: "The port must be 1 to 65535.", bad_topic_prefix: "Bad topic prefix (no spaces, # or +)." };
+function errText(e) { return ERR[e.code] || ("Error: " + (e.code || e.message)); }
+function set(o) { for (var k in o) state[k] = o[k]; render(); }
+function toast(m, bad) { state.err = m ? { m: m, bad: !!bad } : ""; render(); }
+function codeShown(c) { return AquaQr.formatCode(c); }
+
+/* ---------- login / admin password ---------- */
+function viewAuth() {
+  var first = !state.hello.adminSet;
+  return '<div class="card"><h2>' + (first ? "Create the gateway password" : "Sign in") + '</h2>' +
+    '<p class="mut">' + (first ? "This password protects the gateway page. Write it down: it is needed to change settings later." : "Enter the gateway password.") + '</p>' +
+    '<label>Password</label><input id="pw" type="password" autocomplete="' + (first ? "new-password" : "current-password") + '">' +
+    (first ? '<label>Repeat password</label><input id="pw2" type="password" autocomplete="new-password">' : "") +
+    '<p id="msg" class="bad"></p><button class="big" id="go">' + (first ? "Save and continue" : "Sign in") + '</button></div>';
+}
+function bindAuth() {
+  var first = !state.hello.adminSet;
+  $("#go").onclick = function () {
+    var pw = $("#pw").value;
+    if (first && pw !== $("#pw2").value) { $("#msg").textContent = "The two passwords differ."; return; }
+    api("POST", first ? "/api/admin" : "/api/login", { password: pw }).then(function (j) {
+      state.token = j.token; try { sessionStorage.setItem("aqtok", j.token); } catch (e) {}
+      return api("GET", "/api/hello").then(function (h) { state.hello = h; start(); });
+    }).catch(function (e) { $("#msg").textContent = errText(e); });
+  };
+}
+
+/* ---------- wizard ---------- */
+function stepsBar() {
+  var names = ["1 Network", "2 Nodes", "3 Finish"], h = '<div class="steps">';
+  for (var i = 0; i < 3; i++) h += '<span class="' + (i < state.step ? "done" : i === state.step ? "on" : "") + '">' + names[i] + "</span>";
+  return h + "</div>";
+}
+function badge(ok, t) { return '<span class="pill ' + (ok === true ? "ok" : ok === false ? "bad" : "") + '">' + esc(t) + "</span>"; }
+
+function saveForm() {
+  if (!$("#mhost")) return;
+  state.nf = { ssid: $("#ssid").value, wpass: $("#wpass").value, host: $("#mhost").value, port: $("#mport").value, user: $("#muser").value, mpass: $("#mpass").value, prefix: $("#mprefix").value, tls: $("#mtls").checked, insecure: $("#mins").checked, legacy: $("#mleg").checked };
+}
+function viewNetwork() {
+  var s = state.status || { wifi: {}, mqtt: {} }, w = s.wifi, m = s.mqtt, nf = state.nf || {};
+  var h = stepsBar() + '<div class="card"><h2>Wi-Fi</h2>';
+  h += '<div class="row"><button class="sec" id="scan">Scan for networks</button></div>';
+  if (state.scan === "busy") h += '<p class="mut"><span class="spin"></span>Scanning…</p>';
+  else if (state.scan && state.scan.length) { h += '<ul class="list">'; state.scan.forEach(function (n, i) { h += '<li class="net" data-i="' + i + '"><span>' + esc(n.ssid) + (n.open ? "" : " 🔒") + '</span><span class="mut">' + n.rssi + " dBm</span></li>"; }); h += "</ul>"; }
+  h += '<label>Network name (SSID)</label><input id="ssid" value="' + esc(state.form && state.form.ssid || nf.ssid || w.ssid || "") + '" autocapitalize="none" autocorrect="off">';
+  h += '<label>Wi-Fi password</label><input id="wpass" type="password" autocomplete="off" value="' + esc(nf.wpass || "") + '">';
+  h += '<h2 style="margin-top:1.2em">MQTT broker</h2>';
+  var f = state.mq || {}; if (state.nf) { f = { host: nf.host, port: nf.port, user: nf.user, prefix: nf.prefix, tls: nf.tls, insecure: nf.insecure, legacy: nf.legacy, passSet: f.passSet }; }
+  h += '<label>Host</label><input id="mhost" value="' + esc(f.host || "") + '" autocapitalize="none" placeholder="broker.example.com">';
+  h += '<div class="row"><div><label>Port</label><input id="mport" inputmode="numeric" value="' + esc(f.port || (f.tls ? 8883 : 1883)) + '"></div><div><label>Username</label><input id="muser" value="' + esc(f.user || "") + '" autocapitalize="none"></div></div>';
+  h += '<label>Password' + (f.passSet ? " (leave empty to keep the saved one)" : "") + '</label><input id="mpass" type="password" autocomplete="off" value="' + esc(nf && nf.mpass || "") + '">';
+  h += '<label>Topic prefix</label><input id="mprefix" value="' + esc(f.prefix || "waterleak/project001") + '" autocapitalize="none">';
+  h += '<div class="chk"><input type="checkbox" id="mtls"' + (f.tls ? " checked" : "") + '><span>Use TLS (encrypted, recommended)</span></div>';
+  h += '<div class="chk ' + (f.tls ? "" : "hide") + '" id="insrow"><input type="checkbox" id="mins"' + (f.insecure ? " checked" : "") + '><span>Do not verify the broker certificate (not recommended)</span></div>';
+  h += '<div class="chk"><input type="checkbox" id="mleg"' + (f.legacy ? " checked" : "") + '><span>Also publish the old v1 topics (node1, node2, rainwater). Leave off: the app reads the v2 topics.</span></div>';
+  h += '<p class="mut" id="tlsnote"></p>';
+  h += '<button class="big" id="connect">Connect</button><p id="msg" class="bad"></p></div>';
+  h += '<div class="card"><h2>Connection status</h2>' +
+    "<p>Wi-Fi: " + (w.phase === "connected" ? badge(true, "connected") + " " + esc(w.ssid) + " &middot; " + esc(w.ip) + " &middot; " + w.rssi + " dBm &middot; channel " + w.channel :
+      w.phase === "connecting" ? '<span class="spin"></span>connecting…' : w.phase === "failed" ? badge(false, "failed") + " " + esc(w.error) : '<span class="mut">not configured</span>') + "</p>" +
+    "<p>MQTT: " + (m.phase === "connected" ? badge(true, "connected") + " " + esc(m.host) + ":" + m.port + (m.tls ? " (TLS" + (m.tlsVerified ? "" : ", not verified") + ")" : " (no TLS)") :
+      m.phase === "connecting" ? '<span class="spin"></span>connecting…' : m.phase === "failed" ? badge(false, "failed") + " " + esc(m.error) : '<span class="mut">not configured</span>') + "</p>" +
+    (w.phase === "connected" ? '<p class="mut">The phone may drop for a moment when the gateway moves to your router\'s channel: the page reconnects by itself.</p>' : "") + "</div>";
+  var ready = w.phase === "connected" && m.phase === "connected";
+  h += '<button class="big" id="next"' + (ready ? "" : " disabled") + ">Next: add nodes</button>";
+  return h;
+}
+function bindNetwork() {
+  var tls = $("#mtls");
+  function tlsNote() {
+    $("#insrow").classList.toggle("hide", !tls.checked);
+    $("#tlsnote").innerHTML = tls.checked && !$("#mins").checked ? "Adding nodes from the web app needs this TLS connection." : (!tls.checked ? "Without TLS the web app cannot add nodes remotely (the pairing code would travel unencrypted); local setup here still works." : "Certificate checking is off: traffic is encrypted but the broker is not authenticated, so remote node adding stays disabled.");
+  }
+  tls.onchange = function () { if (tls.checked && $("#mport").value === "1883") $("#mport").value = "8883"; if (!tls.checked && $("#mport").value === "8883") $("#mport").value = "1883"; tlsNote(); };
+  $("#mins").onchange = tlsNote; tlsNote();
+  $("#scan").onclick = doScan;
+  [].forEach.call(document.querySelectorAll(".net"), function (li) { li.onclick = function () { state.form = { ssid: state.scan[li.dataset.i].ssid }; $("#ssid").value = state.form.ssid; $("#wpass").focus(); }; });
+  $("#connect").onclick = function () {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();   // let status redraws resume
+    var ssid = $("#ssid").value, host = $("#mhost").value; $("#msg").textContent = "";
+    api("POST", "/api/wifi", { ssid: ssid, pass: $("#wpass").value }).then(function () {
+      var b = { host: host, port: $("#mport").value, user: $("#muser").value, prefix: $("#mprefix").value, tls: tls.checked ? 1 : 0, insecure: $("#mins").checked ? 1 : 0, legacy: $("#mleg").checked ? 1 : 0 };
+      if ($("#mpass").value || !(state.mq && state.mq.passSet)) b.pass = $("#mpass").value;
+      return api("POST", "/api/mqtt", b);
+    }).then(function () { state.mq = { host: host, port: $("#mport").value, user: $("#muser").value, prefix: $("#mprefix").value, tls: tls.checked, insecure: $("#mins").checked, legacy: $("#mleg").checked, passSet: true }; poll(); })
+      .catch(function (e) { $("#msg").textContent = errText(e); });
+  };
+  var nx = $("#next"); if (nx) nx.onclick = function () { set({ step: 1 }); poll(); };
+}
+function doScan() {
+  state.scan = "busy"; render();
+  (function again(n) {
+    api("GET", "/api/wifi/scan").then(function (j) {
+      if (j.scanning && n < 15) setTimeout(function () { again(n + 1); }, 1200); else set({ scan: j.networks || [] });
+    }).catch(function () { set({ scan: [] }); });
+  })(0);
+}
+
+/* ---------- nodes ---------- */
+function stateBadge(n) { return n.state === "paired" ? (n.online ? badge(true, "online") : badge(null, "offline")) : badge(null, "waiting to join"); }
+function battText(n) { if (n.batteryMv == null) return n.type === "rain" ? "" : "battery -"; var v = (n.batteryMv / 1000).toFixed(2); return "battery " + v + " V"; }
+function nodeLabel(n) { return (n.type === "rain" ? "Rain " : "Node ") + n.number; }
+function nodeList(editable) {
+  if (!state.nodes.length) return '<p class="mut">No nodes yet.</p>';
+  var h = '<ul class="list">';
+  state.nodes.forEach(function (n) {
+    h += "<li><span><b>" + esc(nodeLabel(n)) + "</b> " + esc(n.name) + "<br><span class=mut>" + esc(n.mac) + " &middot; " + esc(battText(n)) + (n.state === "paired" ? " &middot; " + n.rssi + " dBm" : "") + "</span></span><span>" + stateBadge(n) +
+      (editable ? ' <button class="sec" data-act="edit" data-t="' + n.type + '" data-n="' + n.number + '">Edit</button>' : "") + "</span></li>";
+  });
+  return h + "</ul>";
+}
+function viewNodes(inWizard) {
+  var h = inWizard ? stepsBar() : "";
+  h += '<div class="card"><h2>Nodes</h2>' + nodeList(true) + '<button class="big" id="addbtn" style="margin-top:12px">Add node</button></div>';
+  if (state.waiting) {
+    var w = state.nodes.filter(function (n) { return n.type === state.waiting.type && n.number === state.waiting.number; })[0];
+    if (w && w.state === "paired") h += '<div class="card ok"><b>' + esc(nodeLabel(w)) + " has joined.</b> It is online now.</div>";
+    else h += '<div class="wait"><span class="spin"></span><b>Waiting for ' + esc((state.waiting.type === "rain" ? "Rain " : "Node ") + state.waiting.number) + "…</b><br>Power on the node near the gateway. Its LED blinks fast while pairing and stays solid when it has joined.</div>";
+  }
+  if (inWizard) h += '<div class="row"><button class="sec" id="back">Back</button><button id="tofinish">Next: finish</button></div>';
+  return h;
+}
+function viewAdd() {
+  var a = state.add, h = '<div class="card"><h2>Add a node</h2><div class="tabs"><button data-tab="scan" class="' + (a.tab === "scan" ? "on" : "") + '">Scan QR</button><button data-tab="type" class="' + (a.tab === "type" ? "on" : "") + '">Type MAC + code</button><button data-tab="near" class="' + (a.tab === "near" ? "on" : "") + '">Nodes nearby (' + state.nearby.length + ")</button></div>";
+  if (a.tab === "scan") {
+    h += '<p>Take a photo of the QR sticker on the node. The gateway reads it here, so it works on your home Wi-Fi too.</p>' +
+      '<label class="btnlike" for="photo">&#128247; Take photo of the QR code</label>' +
+      '<input type="file" id="photo" accept="image/*" capture="environment" style="position:absolute;left:-9999px">' +
+      '<p class="mut">On an iPhone this opens the camera. <b>Open this page in Safari, not the Wi-Fi login popup.</b></p>' +
+      '<p class="mut"><label for="photo2" style="text-decoration:underline">…or choose an existing photo</label></p>' +
+      '<input type="file" id="photo2" accept="image/*" style="position:absolute;left:-9999px"><p id="scanmsg" class="mut"></p>' +
+      '<p class="mut">The sticker link itself (http://192.168.4.1/add?...) only opens while your phone is on "AquaGuard WiFi". On your home Wi-Fi use the photo button above' +
+      (state.status && state.status.wifi && state.status.wifi.ip ? ', or replace 192.168.4.1 in the link with <b>' + esc(state.status.wifi.ip) + '</b>' : '') + '.</p>';
+  } else if (a.tab === "near") {
+    h += '<p class="mut">These nodes are powered on near the gateway and waiting to pair. Pick one, then type the code printed on its sticker.</p>';
+    if (!state.nearby.length) h += '<p class="mut"><span class="spin"></span>Looking… power on the node near the gateway.</p>';
+    else { h += '<ul class="list">'; state.nearby.forEach(function (n, i) { h += '<li class="net" data-near="' + i + '"><span><b>' + (n.type === "rain" ? "Rain node" : "Flow node") + "</b><br><span class=mut>" + esc(n.mac) + "</span></span><span class=mut>" + n.rssi + " dBm</span></li>"; }); h += "</ul>"; }
+  } else {
+    h += '<p class="mut">Nothing happens until you press Add. The MAC and the code are on the sticker; letters can be upper or lower case.</p>';
+  }
+  var f = a.f;
+  h += '<label>Type</label><select id="ntype"><option value="flow"' + (f.type === "flow" ? " selected" : "") + '>Flow node</option><option value="rain"' + (f.type === "rain" ? " selected" : "") + '>Rain node</option></select>';
+  h += '<label>MAC address</label><input id="nmac" value="' + esc(f.mac) + '" placeholder="AA:BB:CC:DD:EE:FF" autocapitalize="characters" autocorrect="off" maxlength="17">';
+  h += '<label>Pairing code</label><input id="ncode" value="' + esc(f.code) + '" placeholder="XXXX-XXXX-XXXX" autocapitalize="characters" autocorrect="off" maxlength="14">';
+  h += '<label>Name (optional)</label><input id="nname" value="' + esc(f.name) + '" placeholder="e.g. Kitchen" maxlength="24">';
+  h += '<p id="msg" class="bad"></p><div class="row"><button class="sec" id="cancel">Cancel</button><button id="doadd">Add</button></div></div>';
+  return h;
+}
+function bindAdd() {
+  var a = state.add;
+  function keep() { a.f = { type: $("#ntype").value, mac: $("#nmac").value, code: $("#ncode").value, name: $("#nname").value }; }
+  [].forEach.call(document.querySelectorAll("[data-tab]"), function (b) { b.onclick = function () { keep(); a.tab = b.dataset.tab; render(); }; });
+  [].forEach.call(document.querySelectorAll("[data-near]"), function (li) { li.onclick = function () { var n = state.nearby[li.dataset.near]; keep(); a.f.mac = n.mac; a.f.type = n.type; a.tab = "type"; render(); setTimeout(function () { var c = $("#ncode"); if (c) c.focus(); }, 50); }; });
+  $("#nmac").oninput = function () {                       // auto-insert ':' while typing, accept pasted dashes
+    var h = this.value.replace(/[^0-9a-fA-F]/g, "").toUpperCase().slice(0, 12); this.value = (h.match(/.{1,2}/g) || []).join(":"); keep();
+  };
+  $("#nname").oninput = keep; $("#ntype").onchange = keep;
+  $("#ncode").oninput = function () {
+    var v = this.value.toUpperCase().replace(/[^0-9A-Z]/g, "").slice(0, 12); this.value = (v.match(/.{1,4}/g) || []).join("-"); keep();
+  };
+  $("#cancel").onclick = function () { set({ add: null }); };
+  ["photo", "photo2"].forEach(function (id) { var ph = $("#" + id); if (ph) ph.onchange = function () { if (ph.files[0]) scanPhoto(ph.files[0]); }; });
+  $("#doadd").onclick = function () {
+    keep(); var f = a.f, code;
+    try { AquaQr.normalizeMac(f.mac); } catch (e) { $("#msg").textContent = ERR.bad_mac; return; }
+    try { code = AquaQr.normalizeCode(f.code); } catch (e) { $("#msg").textContent = ERR.bad_code; return; }
+    api("POST", "/api/nodes", { type: f.type, mac: AquaQr.normalizeMac(f.mac), code: code, name: f.name }).then(function (j) {
+      set({ add: null, waiting: { type: j.type, number: j.number } }); poll();
+    }).catch(function (e) { $("#msg").textContent = errText(e); });
+  };
+}
+function loadJsQr() {
+  return new Promise(function (ok, no) { if (window.jsQR) return ok(); var s = document.createElement("script"); s.src = "/jsqr.js"; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+}
+function scanPhoto(file) {
+  var msg = $("#scanmsg"); msg.textContent = "Reading the photo…";
+  loadJsQr().then(function () {
+    var img = new Image(), url = URL.createObjectURL(file);
+    img.onload = function () {
+      var tries = [1600, 1000, 640], res = null;
+      for (var i = 0; i < tries.length && !res; i++) {
+        var sc = Math.min(1, tries[i] / Math.max(img.width, img.height)), c = document.createElement("canvas");
+        c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
+        var x = c.getContext("2d"); x.drawImage(img, 0, 0, c.width, c.height);
+        var d = x.getImageData(0, 0, c.width, c.height); res = jsQR(d.data, d.width, d.height, { inversionAttempts: "attemptBoth" });
+      }
+      URL.revokeObjectURL(url);
+      if (!res) { msg.className = "bad"; msg.textContent = "No QR code found. Try again closer and in good light, or use \"Type MAC + code\"."; return; }
+      try {
+        var q = AquaQr.parse(res.data); state.add.f = { type: q.type, mac: q.mac, code: codeShown(q.code), name: $("#nname").value }; state.add.tab = "type"; render();
+        $("#msg").className = "ok"; $("#msg").textContent = "QR read. Check the details and press Add.";
+      } catch (e) { msg.className = "bad"; msg.textContent = e.kind === "version" ? "This QR code has an unknown version." : "This is not an Aqua Guard node QR code."; }
+    };
+    img.onerror = function () { msg.className = "bad"; msg.textContent = "Could not open the photo."; }; img.src = url;
+  }).catch(function () { msg.className = "bad"; msg.textContent = "The scanner could not be loaded. Use \"Type MAC + code\"."; });
+}
+function editNode(type, number) {
+  var n = state.nodes.filter(function (x) { return x.type === type && x.number === number; })[0]; if (!n) return;
+  state.edit = n; render();
+}
+// In-page confirmation: window.confirm() is silently suppressed in some captive-portal mini browsers (iOS "CNA"), which made Remove do nothing.
+function ask(boxSel, msg, yesLabel, cb) {
+  var b = $(boxSel); if (!b) { cb(); return; }
+  b.innerHTML = '<div class="card warn"><p>' + esc(msg) + '</p><div class="row"><button class="sec" data-no="1">Cancel</button><button class="bad" data-yes="1">' + esc(yesLabel) + "</button></div></div>";
+  b.querySelector("[data-no]").onclick = function () { b.innerHTML = ""; };
+  b.querySelector("[data-yes]").onclick = function () { b.innerHTML = ""; cb(); };
+}
+function viewEdit() {
+  var n = state.edit, ppl = n.pplX10 ? (n.pplX10 / 10).toFixed(1) : "";
+  return '<div class="card"><h2>' + esc(nodeLabel(n)) + '</h2><p class="mut">' + esc(n.mac) + "</p>" +
+    '<label>Name</label><input id="ename" value="' + esc(n.name) + '" maxlength="24">' +
+    (n.type === "flow" ? '<label>Calibration, pulses per litre (empty = node default 450)</label><input id="eppl" inputmode="decimal" value="' + ppl + '"><div class="chk"><input type="checkbox" id="etx"' + (n.txReduce ? " checked" : "") + "><span>Reduce transmit power (weak antenna / short range)</span></div>" : "") +
+    '<p id="msg" class="bad"></p><div id="cbox"></div><div class="row"><button class="sec" id="ecancel">Close</button><button id="esave">Save</button></div>' +
+    '<hr><h2>Replace hardware</h2><p class="mut">New node takes over this number and its history. Enter the new node\'s MAC and code.</p>' +
+    '<input id="rmac" placeholder="New MAC AA:BB:CC:DD:EE:FF"><br><br><input id="rcode" placeholder="New pairing code"><br><br><button class="sec" id="rep">Replace</button>' +
+    '<hr><button class="bad" id="del">Remove ' + esc(nodeLabel(n)) + "</button></div>";
+}
+function bindEdit() {
+  var n = state.edit, q = { type: n.type };
+  $("#ecancel").onclick = function () { set({ edit: null }); };
+  $("#esave").onclick = function () {
+    var b = { type: n.type, name: $("#ename").value };
+    if (n.type === "flow") { var v = $("#eppl").value.trim(); b.pplX10 = v ? Math.round(parseFloat(v) * 10) : 0; b.txReduce = $("#etx").checked ? 1 : 0; }
+    api("PATCH", "/api/nodes/" + n.number, b).then(function () { set({ edit: null }); poll(); }).catch(function (e) { $("#msg").textContent = errText(e); });
+  };
+  $("#rep").onclick = function () {
+    var code; try { code = AquaQr.normalizeCode($("#rcode").value); AquaQr.normalizeMac($("#rmac").value); } catch (e) { $("#msg").textContent = e.kind === "mac" ? ERR.bad_mac : ERR.bad_code; return; }
+    ask("#cbox", "Replace the hardware of " + nodeLabel(n) + "? The old node stops being accepted.", "Yes, replace", function () {
+      api("POST", "/api/nodes/replace", { type: n.type, number: n.number, mac: AquaQr.normalizeMac($("#rmac").value), code: code }).then(function () { set({ edit: null, waiting: { type: n.type, number: n.number } }); poll(); }).catch(function (e) { $("#msg").textContent = errText(e); });
+    });
+  };
+  $("#del").onclick = function () {
+    ask("#cbox", "Remove " + nodeLabel(n) + "? The node will be unpaired.", "Yes, remove", function () {
+      api("DELETE", "/api/nodes/" + n.number, q).then(function () { set({ edit: null }); poll(); }).catch(function (e) { $("#msg").textContent = errText(e); });
+    });
+  };
+}
+
+/* ---------- finish ---------- */
+function viewFinish() {
+  var s = state.status || { wifi: {}, mqtt: {}, nodes: {} };
+  var h = stepsBar() + '<div class="card"><h2>Summary</h2><p>Gateway <b>' + esc(state.hello.gateway) + "</b></p>" +
+    "<p>Wi-Fi: " + esc(s.wifi.ssid) + " &middot; " + esc(s.wifi.ip) + " &middot; channel " + s.wifi.channel + "</p>" +
+    "<p>MQTT: " + (s.mqtt.phase === "connected" ? badge(true, "connected") : badge(false, s.mqtt.phase)) + " " + esc(s.mqtt.host) + (s.mqtt.tls ? " (TLS)" : " (no TLS)") + "</p>" +
+    "<p>Time: " + (s.time && s.time.synced ? badge(true, "synced") : badge(null, "not synced yet (the web app needs it to add nodes remotely)")) + "</p>" + nodeList(false) + "</div>";
+  h += '<div class="row"><button class="sec" id="back">Back</button><button id="finish">Finish</button></div><p id="msg" class="bad"></p>';
+  return h;
+}
+function viewDone() {
+  var s = state.status || { wifi: {} };
+  return '<div class="card"><h2>Setup finished</h2><p>The gateway is running. Its setup network "AquaGuard WiFi" is closing.</p>' +
+    "<p>Open this page later on your normal Wi-Fi at <b>http://aquaguard.local</b> or <b>http://" + esc(s.wifi.ip || "") + "</b> (you will need the gateway password).</p></div>";
+}
+
+/* ---------- run mode (after setup) ---------- */
+function addressCard(s) {                                   // where to open this page later on the home Wi-Fi
+  var ip = s.wifi && s.wifi.ip;
+  return '<div class="card"><p class="mut">Gateway address (on your home Wi-Fi)</p><p><b>' + (ip ? "http://" + esc(ip) : "not connected to Wi-Fi") + '</b>' +
+    (ip ? ' &middot; <b>http://aquaguard.local</b>' : '') + '</p>' + (ip ? '<p class="mut">Add a node: <b>http://' + esc(ip) + '/add</b></p>' : '') + '</div>';
+}
+function viewRun() {
+  var s = state.status || { wifi: {}, mqtt: {}, nodes: {}, queue: {}, time: {} };
+  var h = '<div class="nav"><button data-nav="nodes" class="' + (state.nav === "nodes" ? "on" : "") + '">Nodes</button><button data-nav="status" class="' + (state.nav === "status" ? "on" : "") + '">Status</button></div>';
+  if (state.nav === "status") {
+    h += '<div class="card"><h2>Gateway</h2><p>Wi-Fi: ' + (s.wifi.phase === "connected" ? badge(true, "connected") + " " + esc(s.wifi.ssid) + " &middot; " + s.wifi.rssi + " dBm &middot; channel " + s.wifi.channel : badge(false, s.wifi.phase)) + "</p>" +
+      "<p>MQTT: " + (s.mqtt.phase === "connected" ? badge(true, "connected") : badge(false, s.mqtt.phase + " " + (s.mqtt.error || ""))) + " " + esc(s.mqtt.host) + (s.mqtt.tls ? " (TLS)" : " (no TLS)") + "</p>" +
+      "<p>Time: " + (s.time.synced ? badge(true, "synced") : badge(false, "not synced")) + " &middot; Remote add from the web app: " + (s.mqtt.remoteAdd ? badge(true, "enabled") : badge(null, "disabled (needs verified TLS + time)")) + "</p>" +
+      "<p class=mut>Queue " + s.queue.depth + " &middot; dropped " + s.queue.overflow + " &middot; radio drops " + s.queue.rxDropped + " &middot; free heap " + s.freeHeap + " &middot; up " + Math.round(s.uptime / 60) + " min &middot; fw " + esc(s.fw) + "</p></div>" +
+      '<div class="card"><button class="sec" id="resetup">Change Wi-Fi / MQTT (re-enter setup)</button><br><br><button class="bad" id="freset">Factory reset gateway</button><div id="fbox"></div></div>';
+  } else h += viewNodes(false);
+  return addressCard(s) + h;
+}
+
+/* ---------- main ---------- */
+function render() {
+  var app = $("#app"); if (!state.hello) return;
+  saveForm();
+  var h = "";
+  if (state.err) h += '<div class="card ' + (state.err.bad ? "bad" : "ok") + '">' + esc(state.err.m) + "</div>";
+  if (state.hello.adminSet === false || !state.token && state.hello.adminSet) { app.innerHTML = h + viewAuth(); bindAuth(); return; }
+  if (state.done) h += viewDone();
+  else if (state.add) h += viewAdd();
+  else if (state.edit) h += viewEdit();
+  else if (state.hello.mode === "setup") h += state.step === 0 ? viewNetwork() : state.step === 1 ? viewNodes(true) : viewFinish();
+  else h += viewRun();
+  app.innerHTML = h;
+  if (state.done) return;
+  if (state.add) { bindAdd(); return; }
+  if (state.edit) { bindEdit(); return; }
+  if (state.hello.mode === "setup" && state.step === 0) bindNetwork();
+  else if (state.hello.mode === "setup" && state.step === 2) { $("#back").onclick = function () { set({ step: 1 }); }; $("#finish").onclick = function () {
+    api("POST", "/api/setup/finish").then(function () { set({ done: true }); }).catch(function (e) { $("#msg").textContent = errText(e); }); }; }
+  else {
+    var ab = $("#addbtn"); if (ab) ab.onclick = function () { state.add = { tab: "scan", f: (pend && pend.mac) ? { type: pend.type, mac: pend.mac, code: codeShown(pend.code), name: "" } : { type: "flow", mac: "", code: "", name: "" } }; if (pend && pend.mac) state.add.tab = "type"; pend = null; render(); poll(); };
+    var b = $("#back"); if (b) b.onclick = function () { set({ step: 0 }); };
+    var tf = $("#tofinish"); if (tf) tf.onclick = function () { set({ step: 2 }); };
+    [].forEach.call(document.querySelectorAll("[data-act=edit]"), function (b) { b.onclick = function () { editNode(b.dataset.t, +b.dataset.n); }; });
+    [].forEach.call(document.querySelectorAll("[data-nav]"), function (b) { b.onclick = function () { set({ nav: b.dataset.nav }); }; });
+    var rs = $("#resetup"); if (rs) rs.onclick = function () { api("POST", "/api/setup/enter").then(function () { setTimeout(function () { location.href = "http://192.168.4.1/"; }, 1500); }); };
+    var fr = $("#freset"); if (fr) fr.onclick = function () { ask("#fbox", "Erase ALL settings and nodes on this gateway? This cannot be undone.", "Yes, erase everything", function () { api("POST", "/api/factory-reset").then(function () { toast("Gateway is restarting in setup mode."); }); }); };
+  }
+}
+var polling = false;
+function poll() {
+  if (polling || !state.token && state.hello && state.hello.adminSet) return; polling = true;
+  var jobs = [api("GET", "/api/status").then(function (j) { state.status = j; })];
+  if (state.step >= 1 || state.hello.mode === "run") { jobs.push(api("GET", "/api/nodes").then(function (j) { state.nodes = j.nodes || []; })); jobs.push(api("GET", "/api/nearby").then(function (j) { state.nearby = j.nearby || []; })); }
+  Promise.all(jobs).then(function () { polling = false; if (!active() && !state.edit && !(state.add && state.add.tab !== "near")) render(); }).catch(function () { polling = false; });   // network blips while the AP changes channel are normal
+}
+function active() { var e = document.activeElement; return e && /INPUT|SELECT/.test(e.tagName) && e.type !== "checkbox" && e.type !== "file"; }   // never redraw under a typing finger
+function start() {
+  if (state.hello.mode === "run" || state.hello.setupDone && state.hello.mode !== "setup") { state.step = 2; }
+  api("GET", "/api/mqtt").then(function (m) { state.mq = m; }).catch(function () {}).then(function () { poll(); render(); });
+  if (pend && pend.mac && !state.add && (state.hello.mode === "run" || true)) { state.step = Math.max(state.step, 1); state.add = { tab: "type", f: { type: pend.type, mac: pend.mac, code: codeShown(pend.code), name: "" } }; pend = null; }
+  render();
+}
+if (/CaptiveNetworkSupport|Wispr|wv\)|; wv/i.test(navigator.userAgent)) $("#hint").classList.remove("hide");
+fetch("/api/hello").then(function (r) { return r.json(); }).then(function (h) {
+  state.hello = h; $("#gwid").textContent = h.gateway;
+  if (h.adminSet && !state.token) { render(); return; }
+  if (!h.adminSet) { render(); return; }
+  start();
+}).catch(function () { $("#app").innerHTML = '<div class="card bad">Cannot reach the gateway. Check that you are connected to its Wi-Fi.</div>'; });
+setInterval(function () { if (state.hello && (state.token || state.hello.adminSet === false)) poll(); }, 1500);
+if (pend && pend.error) { setTimeout(function () { toast("The scanned link is not a valid Aqua Guard node QR.", true); }, 300); pend = null; }
+</script>
+</body>
+</html>

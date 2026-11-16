@@ -1,0 +1,26 @@
+{
+  "_comment": "Shared QR/code cases. Every implementation (firmware aquaQrParse, tools/aqua_qr.py, portal JS, web app) must agree. ok -> expected fields, else expected error kind.",
+  "cases": [
+    {"in": "http://192.168.4.1/add?v=1&mac=AA:BB:CC:DD:EE:FF&code=0123456789AB&type=flow", "ok": {"mac": "AA:BB:CC:DD:EE:FF", "code": "0123456789AB", "type": "flow"}},
+    {"in": "  https://aquaguard.local/add?v=1&mac=aa%3Abb%3Acc%3add%3Aee%3Aff&code=abcd-efgh-jkmn&type=RAIN \n", "ok": {"mac": "AA:BB:CC:DD:EE:FF", "code": "ABCDEFGHJKMN", "type": "rain"}},
+    {"in": "http://192.168.4.1/add?type=flow&code=0123456789AB&mac=AABBCCDDEEFF&v=1", "ok": {"mac": "AA:BB:CC:DD:EE:FF", "code": "0123456789AB", "type": "flow"}},
+    {"in": "AQG1;AABBCCDDEEFF;0123456789AB;flow", "ok": {"mac": "AA:BB:CC:DD:EE:FF", "code": "0123456789AB", "type": "flow"}},
+    {"in": "aqg1;aabbccddeeff;0123-4567-89ab;Rain", "ok": {"mac": "AA:BB:CC:DD:EE:FF", "code": "0123456789AB", "type": "rain"}},
+    {"in": "AQG1;AABBCCDDEEFF;O1IL-0000-0000;flow", "ok": {"mac": "AA:BB:CC:DD:EE:FF", "code": "011100000000", "type": "flow"}},
+    {"in": "http://192.168.4.1/add?v=1&mac=AA:BB:CC:DD:EE:FF&type=flow", "err": "format"},
+    {"in": "http://192.168.4.1/add?v=1&code=0123456789AB&type=flow", "err": "format"},
+    {"in": "http://192.168.4.1/add?mac=AA:BB:CC:DD:EE:FF&code=0123456789AB&type=flow", "err": "format"},
+    {"in": "http://192.168.4.1/add?v=2&mac=AA:BB:CC:DD:EE:FF&code=0123456789AB&type=flow", "err": "version"},
+    {"in": "AQG2;AABBCCDDEEFF;0123456789AB;flow", "err": "version"},
+    {"in": "AQG1;AABBCCDDEEFF;0123456789AB", "err": "format"},
+    {"in": "AQG1;AABBCCDDEEFF;0123456789AB;flow;x", "err": "format"},
+    {"in": "http://192.168.4.1/add?v=1&mac=AA:BB:CC:DD:EE&code=0123456789AB&type=flow", "err": "mac"},
+    {"in": "http://192.168.4.1/add?v=1&mac=GG:BB:CC:DD:EE:FF&code=0123456789AB&type=flow", "err": "mac"},
+    {"in": "AQG1;AABBCCDDEEFF00;0123456789AB;flow", "err": "mac"},
+    {"in": "http://192.168.4.1/add?v=1&mac=AA:BB:CC:DD:EE:FF&code=0123&type=flow", "err": "code"},
+    {"in": "AQG1;AABBCCDDEEFF;0123456789AU;flow", "err": "code"},
+    {"in": "http://192.168.4.1/add?v=1&mac=AA:BB:CC:DD:EE:FF&code=0123456789AB&type=valve", "err": "type"},
+    {"in": "hello world", "err": "format"},
+    {"in": "", "err": "format"}
+  ]
+}

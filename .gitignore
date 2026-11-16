@@ -1,0 +1,36 @@
+# secrets / site configuration - never commit
+libraries/AquaProtocol/src/aqua_secrets.h
+**/.env
+**/.secret_key
+# databases (may contain real users, password hashes, usage data)
+**/database/*.db
+**/database/*.db-shm
+**/database/*.db-wal
+*.sqlite*
+# build output / dependencies
+node_modules/
+dist/
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+build/
+# old code archives (contain the previous hard-coded Wi-Fi password)
+current codes .zip
+*.zip
+
+firmware/legacy/Flow_Node/aqua_device.h
+
+# firmware toolchain (scripts/setup_firmware_toolchain.mjs)
+.toolchain/
+# generated node stickers (they contain pairing codes)
+labels/
+
+# gateway portal build output (scripts/build_portal.mjs)
+firmware/gateway/data/
+logs/
+
+# per-node records: pairing codes and stickers must never be committed
+nodes/*/secret.txt
+nodes/*/sticker.*
+.demo/

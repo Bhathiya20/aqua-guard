@@ -1,0 +1,19 @@
+{
+  "name": "aqua-guard",
+  "private": true,
+  "version": "3.0.0-dev",
+  "description": "Aqua Guard - one-command development launcher (Flask API + MQTT subscriber + React dashboard)",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "dev": "concurrently -k -n api,web -c cyan,magenta --kill-others-on-fail \"node scripts/dev-backend.mjs\" \"npm --prefix Aqua-Guard-WCS-UI run dev -- --host\"",
+    "dev:api": "node scripts/dev-backend.mjs",
+    "dev:web": "npm --prefix Aqua-Guard-WCS-UI run dev -- --host",
+    "build": "npm --prefix Aqua-Guard-WCS-UI run build",
+    "test": "node scripts/run-tests.mjs",
+    "demo": "node scripts/demo.mjs",
+    "sim": "node scripts/dev-backend.mjs --script simulate_sensors.py --demo --direct --leak --rain"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

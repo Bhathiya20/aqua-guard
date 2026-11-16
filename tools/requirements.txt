@@ -1,0 +1,4 @@
+# tools/make_node_labels.py (sticker generator)
+qrcode>=7.4
+pillow>=10
+pyserial
