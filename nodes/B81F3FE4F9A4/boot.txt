@@ -1,0 +1,5 @@
+=== AQUA GUARD FLOW NODE (ESP32-C3)  fw 2.0  proto v2 ===
+Reset reason:  POWERON (power applied / regulator) (uptime 60 s)
+MAC:           B8:1F:3F:E4:F9:A4
+Pairing code:  XXXX-XXXX-XXXX  (masked; the real code is in secret.txt and on the sticker, both git-ignored)
+(commands: info = reprint this banner | regen-code = new code.  sticker: python tools/make_node_labels.py --serial-log <captured output>)

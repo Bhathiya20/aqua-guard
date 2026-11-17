@@ -1,4 +1,6 @@
-# Node 44:BD:8D:5D:EB:88  (replacement for the old Node 2 board)
+# Node 44:BD:8D:5D:EB:88  (replacement for the old Node 2 board) - RETIRED
+
+**Status: retired - replaced by `B8:1F:3F:E4:F9:A4` on 2026-11-17** (see `nodes/B81F3FE4F9A4/`). Do not reuse this record. Its history stays on the gateway under Node 1, which the new board takes over.
 
 | Field | Value |
 |---|---|
