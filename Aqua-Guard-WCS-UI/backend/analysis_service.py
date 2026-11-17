@@ -371,6 +371,8 @@ def run_analysis(conn, cfg, now: datetime | None = None, base: ZoneParams | None
     now = now or utc_now()
     calibration_api.expire_sessions(conn, now)
     import clock_service
+    import usage_reset
+    usage_reset.expire(conn, now.timestamp())                      # the demo usage baseline switches itself off after 24 h
     clock_service.expire_clock(conn, now.timestamp())             # the demo clock switches itself off after 1 h (audit entry by the system)
     base = base or params_from_env()
     out = []

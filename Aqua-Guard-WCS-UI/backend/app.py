@@ -20,6 +20,7 @@ import pipeline_api
 import history_api
 import usage_service
 import clock_service
+import usage_reset
 import registry_api
 import services
 from config import Settings, ensure_secret_key, load_settings
@@ -292,7 +293,7 @@ def create_app(settings: Settings | None = None, start_background: bool = True) 
             gw, devs = services.device_status(conn, cfg, now)
             n1, n2, rain = latest_flow(conn, 1), latest_flow(conn, 2), latest_rain(conn)
             today = fmt_ts(now.replace(hour=0, minute=0, second=0, microsecond=0))
-            week = fmt_ts(now - timedelta(days=7))
+            today, week = usage_reset.clamp(conn, today, now.timestamp()), usage_reset.clamp(conn, fmt_ts(now - timedelta(days=7)), now.timestamp())
             month = fmt_ts(now - timedelta(days=30))
             a = cfg.authoritative_node
             alerts = services.list_alerts(conn, active_only=True)
@@ -339,7 +340,7 @@ def create_app(settings: Settings | None = None, start_background: bool = True) 
         try:
             now = utc_now()
             a = cfg.authoritative_node
-            today = fmt_ts(now.replace(hour=0, minute=0, second=0, microsecond=0))
+            today = usage_reset.clamp(conn, fmt_ts(now.replace(hour=0, minute=0, second=0, microsecond=0)), now.timestamp())
             t1, t2 = services.consumption_total(conn, 1), services.consumption_total(conn, 2)
             f1, f2 = latest_flow(conn, 1), latest_flow(conn, 2)
             count = conn.execute("SELECT COUNT(*) c FROM flow_samples").fetchone()["c"]
@@ -349,7 +350,7 @@ def create_app(settings: Settings | None = None, start_background: bool = True) 
                 node1TotalLiters=t1["liters"], node2TotalLiters=t2["liters"],
                 node1CurrentFlow=f1["flow_lpm"] if f1 else None, node2CurrentFlow=f2["flow_lpm"] if f2 else None,
                 todayLiters=services.consumption_total(conn, a, today)["liters"],
-                last7DaysLiters=services.consumption_total(conn, a, fmt_ts(now - timedelta(days=7)))["liters"],
+                last7DaysLiters=services.consumption_total(conn, a, usage_reset.clamp(conn, fmt_ts(now - timedelta(days=7)), now.timestamp()))["liters"],
                 last30DaysLiters=services.consumption_total(conn, a, fmt_ts(now - timedelta(days=30)))["liters"],
                 missedIntervals=t1["missedIntervals"], totalMeasurements=count)
         finally:
@@ -670,6 +671,7 @@ def create_app(settings: Settings | None = None, start_background: bool = True) 
     calibration_api.register(app, cfg)
     usage_service.register(app, cfg)
     clock_service.register(app, cfg)
+    usage_reset.register(app, cfg)
     history_api.register(app, cfg)
     if not nodes_api.parse_cmd_key(cfg.cmd_key_hex):
         print("[CMD] AQUAGUARD_CMD_KEY is missing or all zero: node commands (add/rename/calibrate/replace/remove) are DISABLED.")

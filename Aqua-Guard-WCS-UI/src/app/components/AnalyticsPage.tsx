@@ -5,6 +5,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { BarChart3, Download } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { UsageResetNote } from "./UsageReset";
 import { ConnectionBanner, EmptyState, Loading, PageHeader, Pill } from "./common";
 import { fmtClock, fmtDayShort, fmtTime, usePolling } from "../lib/usePolling";
 import { useActivePipeline } from "../lib/useActivePipeline";
@@ -99,6 +100,7 @@ export function AnalyticsPage() {
       <PageHeader icon={<BarChart3 className="h-6 w-6 text-blue-600" />} title="Analytics" subtitle="Usage per node and per zone, and the history of leak events."
         right={<div className="flex gap-2"><Button size="sm" variant="outline" disabled={!data || data.rows.length === 0} onClick={exportUsage}><Download className="mr-1.5 h-3.5 w-3.5" />Export usage CSV</Button>
           <Button size="sm" variant="outline" disabled={(leaks.data?.leaks.length ?? 0) === 0} onClick={exportLeaks}><Download className="mr-1.5 h-3.5 w-3.5" />Export leaks CSV</Button></div>} />
+      <UsageResetNote full />
       <ConnectionBanner error={nodes.error || series.error} stale={nodes.stale || series.stale} onRetry={() => { nodes.refresh(); series.refresh(); }} />
 
       <div className="flex flex-wrap gap-2">

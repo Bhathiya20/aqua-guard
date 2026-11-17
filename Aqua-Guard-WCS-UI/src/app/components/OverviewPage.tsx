@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/
 import { Button } from "./ui/button";
 import { ConnectionBanner, EmptyState, Loading, PageHeader, Pill, Stat, deviceTone } from "./common";
 import { fmtAge, usePolling } from "../lib/usePolling";
+import { UsageResetControl } from "./UsageReset";
 import { SetupProgress } from "./StatusStrip";
 import { api } from "../lib/api";
 import { valveStateName } from "./common";
@@ -31,6 +32,7 @@ export function OverviewPage() {
     <div className="space-y-5">
       <PageHeader icon={<Activity className="h-6 w-6 text-blue-600" />} title="Overview" subtitle="Live state of the whole water system." />
       <ConnectionBanner error={s.error} stale={s.stale} onRetry={s.refresh} />
+      <UsageResetControl />
       <SetupProgress sum={d} pipelines={ap.list.data?.pipelines.length ?? 0} active={!!ap.active} lc={lc} />
 
       {!gw && <Card><CardContent><EmptyState title="No gateway" action={{ to: "/nodes", label: "Open Nodes" }}>No gateway has reported yet. Power the gateway; it appears here once it reaches the MQTT broker.</EmptyState></CardContent></Card>}

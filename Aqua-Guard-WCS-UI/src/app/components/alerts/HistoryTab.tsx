@@ -6,6 +6,7 @@ import { Button } from "../ui/button";
 import { Card, CardContent } from "../ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { EmptyState, Loading, Pill } from "../common";
+import { UsageResetNote } from "../UsageReset";
 import { fmtClock, fmtDuration, fmtTime, usePolling } from "../../lib/usePolling";
 import { RESOLVE_REASONS, v2, type HistoryEvent } from "../../lib/v2";
 
@@ -70,6 +71,7 @@ export function HistoryTab({ initialNode = "", initialZone = "" }: { initialNode
   const set = (k: string) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [k]: e.target.value }));
   return (
     <div className="space-y-3" data-testid="history-tab">
+      <UsageResetNote full />
       <div className="flex flex-wrap items-end gap-2" data-testid="history-filters">
         <label className="text-xs">From<input type="date" className={`${sel} block`} value={f.from} onChange={set("from")} aria-label="From date" /></label>
         <label className="text-xs">To<input type="date" className={`${sel} block`} value={f.to} onChange={set("to")} aria-label="To date" /></label>

@@ -13,6 +13,7 @@ from flask import g, jsonify, request
 import auth
 import gateway_v2
 import mqtt_service
+import usage_reset
 from database import db_session, get_db
 from ingest import fmt_ts, parse_ts, utc_now
 from protocol_v2 import CommandError, DEV_FLOW, DEV_RAIN, build_aqc2, normalize_code, normalize_mac, parse_cmd_key
@@ -134,6 +135,7 @@ def register(app, cfg):
             return None
         day = fmt_ts(now.replace(hour=0, minute=0, second=0, microsecond=0))
         week = fmt_ts(now - timedelta(days=7))
+        day, week = usage_reset.clamp(conn, day, now.timestamp()), usage_reset.clamp(conn, week, now.timestamp())      # demo "Reset usage": count from the baseline
         last = conn.execute("SELECT flow_lpm, cum_pulses, measured_at, received_at FROM flow_samples WHERE node_ref=? AND anomaly=0 ORDER BY measured_at DESC, id DESC LIMIT 1", (n["id"],)).fetchone()
         use = conn.execute("SELECT COALESCE(SUM(CASE WHEN measured_at>=? THEN delta_pulses*10.0/pulses_per_liter_x10 END),0) AS today,"
                            " COALESCE(SUM(delta_pulses*10.0/pulses_per_liter_x10),0) AS week FROM flow_samples WHERE node_ref=? AND measured_at>=? AND anomaly=0",

@@ -83,6 +83,7 @@ export interface ZoneTimeRules {
 /** Demo clock (admin, demo only): auto = real time, day / night = every time-based rule reads "now" as day / night.  Self-off after `maxS`. */
 export type ClockMode = "auto" | "day" | "night";
 export interface DemoClock { mode: ClockMode; forced: boolean; since: number | null; until: number | null; by: string | null; maxS: number }
+export interface UsageResetState { active: boolean; since: number | null; until: number | null; by: string | null; cleared: boolean; maxS: number }
 export interface ZoneNodeInfo {
   partId: string; number: number; label: string; name: string; nodeRef: number | null; state: "online" | "offline" | "out_of_service" | "missing";
   lastSeen: string | null; flowLpm: number | null; ageS: number | null;
@@ -226,6 +227,10 @@ export const v2 = {
   zoneUsage: (id: number, zone: string, bucket: "hour" | "day" | "week" | "month", days: number) => request<{ zone: string; bucket: string; usage: ZoneUsagePoint[] }>(`/pipelines/${id}/zones/${encodeURIComponent(zone)}/usage${q({ bucket, days })}`),
   zoneThresholds: (pid: number, zid: string) => request<ZoneThresholds>(`/pipelines/${pid}/zones/${encodeURIComponent(zid)}/thresholds`),
   setZoneThresholds: (pid: number, zid: string, b: { xPlusLpm?: number; xMinusLpm?: number; tLeakS?: number; source?: "learned" | "manual" }) => request<ZoneThresholds>(`/pipelines/${pid}/zones/${encodeURIComponent(zid)}/thresholds`, { method: "PUT", body: body(b) }),
+  usageReset: () => request<UsageResetState>("/usage-reset"),
+  usageResetNow: (clear: boolean) => request<UsageResetState>("/usage-reset", { method: "POST", body: body({ clear }) }),
+  extendUsageReset: () => request<UsageResetState>("/usage-reset/extend", { method: "POST", body: body({}) }),
+  undoUsageReset: () => request<UsageResetState>("/usage-reset", { method: "DELETE" }),
   demoClock: () => request<DemoClock>("/demo-clock"),
   setDemoClock: (mode: ClockMode) => request<DemoClock>("/demo-clock", { method: "PUT", body: body({ mode }) }),
   zoneTime: (pid: number, zid: string) => request<ZoneTimeRules>(`/pipelines/${pid}/zones/${encodeURIComponent(zid)}/time-settings`),

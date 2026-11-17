@@ -165,10 +165,14 @@ def live_all(conn, now: datetime | None = None) -> list:
     now_s = now.timestamp()
     off = _site_offset(now)
     clk = clock_service.load_clock(conn, now_s)
+    import usage_reset
+    base = usage_reset.baseline(conn, now_s)
     out = []
     for n in conn.execute("SELECT id, number, name, out_of_service FROM nodes WHERE type='flow' AND state='paired' ORDER BY number, id").fetchall():
         p, override, demo = node_profile(conn, n["id"], now_s, clk)
         run, row = _load_run(conn, n["id"])
+        if base is not None and run.flowing and run.flow_since is not None:
+            run.flow_since = max(run.flow_since, base)                 # demo "Reset usage": the running time counts from the baseline
         cls = U.classify(run, now_s, p, off, clk)
         if n["out_of_service"]:
             cls = dict(cls, status="OUT_OF_SERVICE", tFlowS=None, next=None)

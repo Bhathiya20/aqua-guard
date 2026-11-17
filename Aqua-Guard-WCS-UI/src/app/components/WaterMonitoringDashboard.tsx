@@ -1,5 +1,6 @@
 // Water Monitoring page: live flow per node, today/7-day usage and running time per node.
 import { UsageLiveTable } from "./usage/UsageParts";
+import { UsageResetControl } from "./UsageReset";
 import { Disclosure } from "./leak/Disclosure";
 import { Link } from "react-router";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -33,6 +34,7 @@ export function WaterMonitoringDashboard() {
   return (
     <div className="space-y-5">
       <PageHeader icon={<Gauge className="h-6 w-6 text-blue-600" />} title="Water Monitoring" subtitle="Flow and usage per node and per zone. Refreshes every 2 seconds." />
+      <UsageResetControl />
       <ConnectionBanner error={sum.error || nodes.error} stale={sum.stale || nodes.stale} onRetry={() => { sum.refresh(); nodes.refresh(); }} />
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
