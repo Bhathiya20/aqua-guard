@@ -1,5 +1,6 @@
 // Water Monitoring page: live flow per node, today/7-day usage and running time per node.
 import { UsageLiveTable } from "./usage/UsageParts";
+import { Disclosure } from "./leak/Disclosure";
 import { Link } from "react-router";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Gauge } from "lucide-react";
@@ -41,7 +42,7 @@ export function WaterMonitoringDashboard() {
         <Stat label="Nodes online" value={sum.data ? `${sum.data.nodes.online} / ${sum.data.nodes.total}` : "—"} />
       </div>
 
-      <UsageLiveTable title="Running time per node" />
+      <Disclosure id="running" title="Running time per node" summary="how long water has been flowing"><UsageLiveTable title="" /></Disclosure>
 
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Nodes</h2>

@@ -100,6 +100,8 @@ describe("Leak detection", () => {
   it("shows each zone with class, status, Q in / out / unaccounted, rules and a link to the Live view", async () => {
     wrap(<LeakDetectionDashboard />);
     const z = await screen.findByTestId("leak-zone-zone:flow2");
+    expect(z).not.toHaveTextContent("Balance (in vs out)");                    // first view is compact; the rules are behind "More details"
+    await userEvent.click(within(z).getByTestId("zone-more-zone:flow2"));
     expect(z).toHaveTextContent("Suspected leak");
     expect(z).toHaveTextContent(/strong/);
     expect(z).toHaveTextContent("5.00");
@@ -107,6 +109,7 @@ describe("Leak detection", () => {
     expect(z).toHaveTextContent("Balance (in vs out)");
     expect(within(z).getByRole("link", { name: /live view/i })).toHaveAttribute("href", "/pipelines/1?mode=live&zone=zone%3Aflow2");
     expect(screen.getByTestId("leak-zone-zone:source")).toHaveTextContent(/not monitored/);
+    await userEvent.click(screen.getByTestId("section-toggle-suggestions"));
     expect(screen.getByText("Add a node on Pipe 1.")).toBeInTheDocument();
   });
   it("without an active pipeline there is an explanation instead of a Node 1 vs Node 2 comparison", async () => {

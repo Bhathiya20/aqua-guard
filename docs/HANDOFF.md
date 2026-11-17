@@ -20,6 +20,15 @@ Read this first after a restart / `/clear`. The spec is committed as `docs/SPEC.
 - History (Part 4): Alerts page tabs Active/History; manual resolve needs a reason (leaks too); CSV `/api/alerts/history.csv`; estimated water lost = integral of D.
 - Water test: docs/WATER_TEST.md.
 
+## 0b. Session 2026-11-17 - gateway reset, new Node 1, Leak Detection redesign, demo clock
+
+- **Gateway factory reset** (NVS erased at 0x9000, MAC ...C4:10:28) and re-added on a new hotspot; backup of the DB and the NVS dump are in `logs/` (git-ignored; the NVS dump holds secrets). Order added: Node 1 main (new board B8:1F:3F:E4:F9:A4, replaces 44:BD:8D:5D:EB:88), Node 2 left, Node 3 Right, Node 4 right sub. Rain 1 is added later. The backend keys on (gateway, type, number), so history and pipeline places stayed.
+- **Nodes "..." menu fixed**: the shared `Button` was not a `forwardRef` (React 18), so the Radix popper never positioned the menu. `e2e/nodes-actions.spec.ts` clicks every action (Chromium + WebKit).
+- **Leak Detection**: compact zone cards -> "More details" -> "Settings" dialog (balance thresholds + time rules); nodes, usage, suggestions and history are collapsed (`leak/Disclosure.tsx`). Nodes table: technical columns behind "More columns".
+- **One time model**: the zone night rule uses the usage quiet hours (default 22:00-05:00); a zone may override quiet hours and the continuous limits (`GET/PUT/DELETE /api/pipelines/<pid>/zones/<zid>/time-settings`, scope `zone:<pid>:<zone>` in `usage_settings`). Weak zones show why they have no balance thresholds.
+- **Demo clock** (admin, `GET/PUT /api/demo-clock`, scope `demo_clock`): Auto / Force DAY / Force NIGHT, off after 1 h, audit entry on every switch, banner on every page, alerts tagged demo. It only changes how rules read "now"; timestamps, gateway and readings are untouched. Tests: `backend/tests/test_demo_clock.py`, `src/app/components/demoClock.test.tsx`, `e2e/leak-ui.spec.ts` (screenshots in `docs/screenshots/leak-ui/`).
+- **Node 1 in "My house"** (pipeline 3, not changed): Node 1 is the main-supply meter and belongs on the pipe straight after the source, `p1` (source -> p1 -> elbow), near its end like the others (pos ~0.95, direction forward). Nodes 2-4 are already placed (p4, p5, p2).
+
 ## 1. Repository state
 - Branch: `feature/v2-pairing` (main branch: `main`). Untracked: only the original `AQUA_GUARD_UPGRADE_PROMPT.md` (its copy is `docs/SPEC.md`). No git remote is configured yet: add one with `git remote add origin <url>` before pushing.
 - Last commits (newest first): UX review groups 1-3 (`da8441c` group 1, `027e5fd` group 2, group 3 = this file's commit), `76cb722` per-node TX power, group C, `43af4a8` rain node record, `833da8e` group B, `2280458` group A, `e42236f` HANDOFF v1.

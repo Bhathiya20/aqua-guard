@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { CheckCircle2, Circle } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Pill } from "./common";
+import { ClockBanner } from "./DemoClock";
 import { usePolling } from "../lib/usePolling";
 import { useActivePipeline } from "../lib/useActivePipeline";
 import { leakCheck, v2, type LeakCheck, type SummaryV2 } from "../lib/v2";
@@ -32,6 +33,7 @@ export function StatusStrip() {
   const leakText = !ap.active ? "no pipeline active" : lc.state === "ok" ? "no leak" : lc.state === "watching" ? "watching" : lc.state === "paused" ? "paused (no data)" : lc.state === "none" ? "nothing monitored" : lc.headline.toLowerCase();
   const cal = usePolling(() => v2.calibrationActive(), 5000);
   return (<>
+    <ClockBanner />
     {cal.data?.active && (
       <div className="border-b border-amber-300 bg-amber-100 px-4 py-1.5 text-xs text-amber-900" data-testid="calibration-banner" role="status">
         <b>Calibration in progress</b> - leak detection is paused for {(cal.data.nodes ?? []).map((n) => n.label).join(", ") || "the selected nodes"}. <Link className="underline font-medium" to="/nodes/calibrate">Open the calibration wizard</Link>

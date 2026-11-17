@@ -74,6 +74,15 @@ export interface Wlds { state: BalanceState; tdS: number; tLeakS: number; dLpm: 
 export interface ZoneThresholds { zone: string; strong: boolean; xPlusLpm: number; xMinusLpm: number; tLeakS: number; windowS: number; defaults: { xPlusLpm: number; xMinusLpm: number; tLeakS: number; demoTLeakS: number }; custom: boolean; source: string | null; updatedAt: string | null; updatedBy: string | null }
 export interface LearnResult { windows: number; totalWindows: number; windowS: number; meanDLpm: number; sdDLpm: number; meanFlowLpm: number; floorLpm: number; xPlusLpm: number; xMinusLpm: number; warnings: string[]; usable: boolean }
 export interface LearnSession { session: null | { id: number; status: "running" | "done" | "cancelled"; startedAt: number; endedAt: number | null; createdBy: string | null; progress?: LearnResult; result?: LearnResult } }
+/** Time rules of one zone: the quiet hours are shared with the node usage profiles (global default); a zone may override them. */
+export interface ZoneTimeRules {
+  quietStart: string; quietEnd: string; continuousSuspectH: number; continuousConfirmH: number;
+  source: { quietStart: "default" | "zone"; quietEnd: "default" | "zone"; continuousSuspectH: "default" | "zone"; continuousConfirmH: "default" | "zone" };
+  overridden: boolean; defaults: { quietStart: string; quietEnd: string; continuousSuspectH: number; continuousConfirmH: number };
+}
+/** Demo clock (admin, demo only): auto = real time, day / night = every time-based rule reads "now" as day / night.  Self-off after `maxS`. */
+export type ClockMode = "auto" | "day" | "night";
+export interface DemoClock { mode: ClockMode; forced: boolean; since: number | null; until: number | null; by: string | null; maxS: number }
 export interface ZoneNodeInfo {
   partId: string; number: number; label: string; name: string; nodeRef: number | null; state: "online" | "offline" | "out_of_service" | "missing";
   lastSeen: string | null; flowLpm: number | null; ageS: number | null;
@@ -85,10 +94,10 @@ export interface LiveZone {
   inMeter: string | null; outMeters: string[]; outlets: string[]; outletIds: string[]; pipes: Array<{ id: string; fraction: number }>; parts: string[];
   balance: { qIn: number; qOut: number; unaccounted: number; thresholdLpm: number; bucketTs: number; confidence: string } | null;
   meterFaultHint: string | null; suggestions: Array<Record<string, unknown>>; parent: string | null;
-  rules: Array<{ rule: string; level: number; clear: boolean; reason: string; progress?: RuleProgressInfo | null }>; watching?: boolean; calibrating?: string[]; settings?: ZoneSettings; balanceState?: BalanceState | null; wlds?: Wlds | null; completeBuckets: number; finalBuckets: number; nodesMissing: string[]; nodesOffline?: string[]; nodesOutOfService?: string[];
+  rules: Array<{ rule: string; level: number; clear: boolean; reason: string; progress?: RuleProgressInfo | null }>; watching?: boolean; calibrating?: string[]; settings?: ZoneSettings; balanceState?: BalanceState | null; wlds?: Wlds | null; timeRules?: ZoneTimeRules; completeBuckets: number; finalBuckets: number; nodesMissing: string[]; nodesOffline?: string[]; nodesOutOfService?: string[];
 }
 export interface PipelineStatus {
-  pipelineId: number; name: string; version: number; demo?: boolean; demoUntil?: number | null; zones: LiveZone[]; nodes?: LeakNodeRow[]; coverage: Coverage; suggestions: Suggestion[];
+  pipelineId: number; name: string; version: number; demo?: boolean; demoUntil?: number | null; pipelineDemo?: boolean; clock?: { mode: ClockMode; since: number | null; until: number | null }; zones: LiveZone[]; nodes?: LeakNodeRow[]; coverage: Coverage; suggestions: Suggestion[];
   live: Record<string, { flowLpm: number | null; measuredAt: string | null; fresh: boolean }>;
 }
 export interface ZoneSeries { zone: string; bucketS: number; buckets: Array<{ ts: number; qInL: number | null; qOutL: number | null; unaccountedL: number | null; complete: boolean; confidence: string; state: string }> }
@@ -217,6 +226,12 @@ export const v2 = {
   zoneUsage: (id: number, zone: string, bucket: "hour" | "day" | "week" | "month", days: number) => request<{ zone: string; bucket: string; usage: ZoneUsagePoint[] }>(`/pipelines/${id}/zones/${encodeURIComponent(zone)}/usage${q({ bucket, days })}`),
   zoneThresholds: (pid: number, zid: string) => request<ZoneThresholds>(`/pipelines/${pid}/zones/${encodeURIComponent(zid)}/thresholds`),
   setZoneThresholds: (pid: number, zid: string, b: { xPlusLpm?: number; xMinusLpm?: number; tLeakS?: number; source?: "learned" | "manual" }) => request<ZoneThresholds>(`/pipelines/${pid}/zones/${encodeURIComponent(zid)}/thresholds`, { method: "PUT", body: body(b) }),
+  demoClock: () => request<DemoClock>("/demo-clock"),
+  setDemoClock: (mode: ClockMode) => request<DemoClock>("/demo-clock", { method: "PUT", body: body({ mode }) }),
+  zoneTime: (pid: number, zid: string) => request<ZoneTimeRules>(`/pipelines/${pid}/zones/${encodeURIComponent(zid)}/time-settings`),
+  setZoneTime: (pid: number, zid: string, b: { quiet_start?: string; quiet_end?: string; continuous_suspect_h?: number; continuous_confirm_h?: number }) =>
+    request<ZoneTimeRules>(`/pipelines/${pid}/zones/${encodeURIComponent(zid)}/time-settings`, { method: "PUT", body: body(b) }),
+  resetZoneTime: (pid: number, zid: string) => request<ZoneTimeRules>(`/pipelines/${pid}/zones/${encodeURIComponent(zid)}/time-settings`, { method: "DELETE" }),
   resetZoneThresholds: (pid: number, zid: string) => request<ZoneThresholds>(`/pipelines/${pid}/zones/${encodeURIComponent(zid)}/thresholds`, { method: "DELETE" }),
   learnState: (pid: number, zid: string) => request<LearnSession>(`/pipelines/${pid}/zones/${encodeURIComponent(zid)}/learn`),
   learnAction: (pid: number, zid: string, action: "start" | "stop" | "cancel") => request<LearnSession>(`/pipelines/${pid}/zones/${encodeURIComponent(zid)}/learn`, { method: "POST", body: body({ action }) }),
