@@ -34,25 +34,22 @@ const buttonVariants = cva(
   },
 );
 
-function Button({
-  className,
-  variant,
-  size,
-  asChild = false,
-  ...props
-}: React.ComponentProps<"button"> &
-  VariantProps<typeof buttonVariants> & {
-    asChild?: boolean;
-  }) {
+// React 18: `ref` is not an ordinary prop, so the Button must forward it. Without this a Radix trigger (`<DropdownMenuTrigger asChild><Button/>`)
+// gets no anchor element, the popper never positions the menu and it stays off screen ("the ... buttons do nothing").
+const Button = React.forwardRef<
+  HTMLButtonElement,
+  React.ComponentProps<"button"> & VariantProps<typeof buttonVariants> & { asChild?: boolean }
+>(function Button({ className, variant, size, asChild = false, ...props }, ref) {
   const Comp = asChild ? Slot : "button";
 
   return (
     <Comp
+      ref={ref}
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />
   );
-}
+});
 
 export { Button, buttonVariants };

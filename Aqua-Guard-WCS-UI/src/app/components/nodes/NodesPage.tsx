@@ -95,40 +95,54 @@ function missing(n: NodeV2, onTrend?: (n: NodeV2) => void) {
   );
 }
 
+/** The state pill; a node in maintenance keeps its "out of service" flag visible even while the gateway is offline (the API then reports "unknown"). */
+function StateCell({ n }: { n: NodeV2 }) {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      <Pill tone={deviceTone(n.state)}>{stateText(n.state)}</Pill>
+      {n.outOfService && n.state !== "out_of_service" && <Pill tone="gray">out of service</Pill>}
+    </span>
+  );
+}
+
 function UsageProfileCell({ u }: { u?: UsageLive }) {
   if (!u) return <span className="text-muted-foreground">Default</span>;
   return <span title={u.summary}>{u.demo ? <Pill tone="violet">demo limits</Pill> : u.presetLabel}{u.custom && !u.demo ? <span className="text-muted-foreground"> (edited)</span> : null}</span>;
 }
 
 export function NodesTable({ nodes, a, admin }: { nodes: NodeV2[]; a: Actions; admin: boolean }) {
+  const [tech, setTech] = useState(false);                     // progressive disclosure: the first view has the columns people read; the technical ones are one click away
   return (
     <>
+      <div className="hidden md:flex justify-end pb-2"><Button size="sm" variant="outline" aria-expanded={tech} onClick={() => setTech((t) => !t)} data-testid="nodes-more-columns">{tech ? "Fewer columns" : "More columns (MAC, battery, signal, calibration…)"}</Button></div>
       <div className="hidden md:block rounded-lg border overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>#</TableHead><TableHead>Type</TableHead><TableHead>Name</TableHead><TableHead>MAC</TableHead><TableHead>State</TableHead><TableHead>Last seen</TableHead>
-              <TableHead className="text-right">Flow now</TableHead><TableHead className="text-right">Today</TableHead><TableHead>Battery</TableHead><TableHead>RSSI</TableHead><TableHead>TX power</TableHead>
-              <TableHead>Calibration</TableHead><TableHead>Usage profile</TableHead><TableHead>Missing readings (24 h)</TableHead><TableHead>Actions</TableHead>
+              <TableHead>#</TableHead>{tech && <TableHead>Type</TableHead>}<TableHead>Name</TableHead>{tech && <TableHead>MAC</TableHead>}<TableHead>State</TableHead><TableHead>Last seen</TableHead>
+              <TableHead className="text-right">Flow now</TableHead><TableHead className="text-right">Today</TableHead>{tech && <><TableHead>Battery</TableHead><TableHead>RSSI</TableHead><TableHead>TX power</TableHead>
+              <TableHead>Calibration</TableHead><TableHead>Usage profile</TableHead><TableHead>Missing readings (24 h)</TableHead></>}<TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {nodes.map((n) => (
               <TableRow key={n.id} data-testid={`node-row-${n.number}`}>
                 <TableCell className="font-semibold">{n.type === "rain" ? "Rain" : "Node"} {n.number}</TableCell>
-                <TableCell data-testid={`type-${n.number}`}><Pill tone={n.type === "rain" ? "blue" : "gray"}>{n.type === "rain" ? "Rain" : "Flow"}</Pill></TableCell>
+                {tech && <TableCell data-testid={`type-${n.number}`}><Pill tone={n.type === "rain" ? "blue" : "gray"}>{n.type === "rain" ? "Rain" : "Flow"}</Pill></TableCell>}
                 <TableCell>{n.name || <span className="text-muted-foreground">—</span>}</TableCell>
-                <TableCell className="font-mono text-xs">{n.mac}</TableCell>
-                <TableCell><Pill tone={deviceTone(n.state)}>{stateText(n.state)}</Pill></TableCell>
+                {tech && <TableCell className="font-mono text-xs">{n.mac}</TableCell>}
+                <TableCell><StateCell n={n} /></TableCell>
                 <TableCell className="text-xs">{n.lastSeen ? fmtAge(n.live?.ageS !== null && n.live?.ageS !== undefined ? Math.round(n.live.ageS) : ageSince(n.lastSeen)) : "never"}<div className="text-muted-foreground">{fmtTime(n.lastSeen)}</div></TableCell>
                 <TableCell className="text-right font-mono">{n.live ? `${lpm(n.live.flowLpm)} L/min` : "—"}</TableCell>
                 <TableCell className="text-right font-mono">{n.live ? liters(n.live.todayLiters) : "—"}</TableCell>
+                {tech && <>
                 <TableCell><BatteryCell mv={n.batteryMv} /></TableCell>
                 <TableCell className="font-mono text-xs">{n.state === "online" ? rssiText(n.rssi) : "—"}</TableCell>
                 <TableCell className="font-mono text-xs" data-testid={`tx-${n.number}`}>{n.type === "rain" ? "—" : txText(n)}</TableCell>
                 <TableCell className="font-mono text-xs">{n.type === "rain" ? "—" : calibrationText(n.pulsesPerLiter)}</TableCell>
                 <TableCell className="text-xs" data-testid={`usage-profile-${n.number}`}>{n.type === "rain" ? "—" : <UsageProfileCell u={a.usage?.get(n.id)} />}</TableCell>
                 <TableCell className="text-xs">{missing(n, a.onTrend)}</TableCell>
+                </>}
                 <TableCell><ActionButtons n={n} a={a} admin={admin} /></TableCell>
               </TableRow>
             ))}
@@ -142,7 +156,7 @@ export function NodesTable({ nodes, a, admin }: { nodes: NodeV2[]; a: Actions; a
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between gap-2">
                 <CardTitle className="text-base">{nodeTitle(n)}</CardTitle>
-                <Pill tone={deviceTone(n.state)}>{stateText(n.state)}</Pill>
+                <StateCell n={n} />
               </div>
               <CardDescription className="font-mono text-xs">{n.mac}</CardDescription>
             </CardHeader>

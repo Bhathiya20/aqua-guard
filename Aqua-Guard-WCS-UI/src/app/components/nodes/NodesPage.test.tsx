@@ -102,6 +102,7 @@ describe("Nodes page", () => {
     mocks.state.nodes = [node(2, { name: "Far", txPowerDbm: 11, rssi: -82, live: { ...node(2).live!, lossPct24h: 14.2, missedPackets24h: 15 } }), node(3, { name: "Near" })];
     mocks.v2.patchNode = vi.fn(async () => ({ commandId: 8, status: "sent", result: null, number: 2 }));
     render(<MemoryRouter><NodesPage /></MemoryRouter>);
+    await user.click(await screen.findByTestId("nodes-more-columns"));
     expect(await screen.findByTestId("tx-2")).toHaveTextContent("11 dBm");
     expect(screen.getByTestId("tx-3")).toHaveTextContent("8.5 dBm");               // default when the gateway reported nothing
     await user.click(screen.getAllByTestId("row-menu-2")[0]);
