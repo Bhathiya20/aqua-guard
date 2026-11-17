@@ -156,8 +156,12 @@ def compute(conn, row, now: datetime, base: ZoneParams, persist: bool = False):
     net = parse(doc)
     part = partition(net)
     now_s = int(now.timestamp())
-    demo = demo_active(row, now_s)
-    p = params_for(doc, base, demo, load_thresholds(conn, row["id"]))
+    pipe_demo = demo_active(row, now_s)
+    import clock_service
+    clk = clock_service.load_clock(conn, now_s)                  # demo clock: only changes how the time rules read "now"
+    demo = pipe_demo or clk.forced                               # alerts raised meanwhile are tagged demo
+    p = params_for(doc, base, pipe_demo, load_thresholds(conn, row["id"]))
+    tmodel = clock_service.apply_to_params(p, conn, row["id"], clk)
     t0 = now_s - int(p.lookback_h * 3600)
     prev = {r["zone_id"]: r for r in conn.execute("SELECT * FROM zone_state WHERE pipeline_id=?", (row["id"],)).fetchall()}
     cache: dict = {}
@@ -210,6 +214,7 @@ def compute(conn, row, now: datetime, base: ZoneParams, persist: bool = False):
                 "watching": ev.status == "normal" and any((r.progress or {}).get("counting") for r in ev.results),
                 "balanceState": (wl or {}).get("state"), "wlds": None if wl is None else {k: (round(v, 3) if isinstance(v, float) else v) for k, v in wl.items()},
                 "settings": _settings_json(zp, p.tz_offset_min, demo),
+                "timeRules": clock_service.zone_time_rules(tmodel, z.id),
                 "completeBuckets": sum(1 for b in fin if b.complete), "finalBuckets": len(fin),
                 "nodesMissing": [m.label for m in z.meters() if cache[m.key][0] is None],
                 "nodesOffline": [m.label for m in z.meters() if cache[m.key][0] is not None and not _node_oos(conn, cache[m.key][0]) and not _node_fresh(conn, cache[m.key][0], now)],
@@ -242,7 +247,8 @@ def compute(conn, row, now: datetime, base: ZoneParams, persist: bool = False):
             nodes_out.append(dict(d_, zones=[{"id": z["id"], "name": z["name"], "role": "in"} for z in zones_out if any(x["partId"] == pid_ for x in z["inflow"])] +
                                   [{"id": z["id"], "name": z["name"], "role": "out"} for z in zones_out if any(x["partId"] == pid_ for x in z["outflow"])]))
         nodes_out.sort(key=lambda x: x["number"])
-    return {"nodes": nodes_out, "pipelineId": row["id"], "name": row["name"], "version": row["active_version"], "demo": demo, "demoUntil": row["demo_until"] if demo else None, "zones": zones_out, "coverage": part.coverage, "suggestions": part.suggestions}
+    return {"nodes": nodes_out, "pipelineId": row["id"], "name": row["name"], "version": row["active_version"], "demo": demo, "demoUntil": row["demo_until"] if pipe_demo else None, "zones": zones_out, "coverage": part.coverage, "suggestions": part.suggestions,
+            "clock": {"mode": clk.mode, "since": clk.since, "until": clk.until}, "pipelineDemo": pipe_demo}
 
 
 def _settings_json(zp: ZoneParams, tz_off: int, demo: bool) -> dict:
@@ -338,7 +344,7 @@ def close_stale_alerts(conn, now, results, failed=()):
     * a DEMO alert when its pipeline is no longer in demo mode (demo ended, auto-off after 1 h, or switched off);
     * any leak alert whose zone is not in an active pipeline any more (pipeline switched off / re-saved with other zones)."""
     live = {_alert_key(r["pipelineId"], z["id"]) for r in results for z in r["zones"]}
-    demo_pids = {r["pipelineId"] for r in results if r.get("demo")}
+    demo_pids = {r["pipelineId"] for r in results if r.get("demo")}        # pipeline demo mode OR a forced demo clock
     ts = fmt_ts(now)
     live |= {_meas_key(r["pipelineId"], z["id"]) for r in results for z in r["zones"]}
     for a in conn.execute("SELECT id, alert_key, pipeline_id, demo FROM alerts WHERE kind IN ('LEAK','measurement_inconsistency') AND active=1").fetchall():
@@ -364,6 +370,8 @@ def run_analysis(conn, cfg, now: datetime | None = None, base: ZoneParams | None
     import calibration_api
     now = now or utc_now()
     calibration_api.expire_sessions(conn, now)
+    import clock_service
+    clock_service.expire_clock(conn, now.timestamp())             # the demo clock switches itself off after 1 h (audit entry by the system)
     base = base or params_from_env()
     out = []
     failed = set()

@@ -19,6 +19,7 @@ import nodes_api
 import pipeline_api
 import history_api
 import usage_service
+import clock_service
 import registry_api
 import services
 from config import Settings, ensure_secret_key, load_settings
@@ -668,6 +669,7 @@ def create_app(settings: Settings | None = None, start_background: bool = True) 
     pipeline_api.register(app, cfg)
     calibration_api.register(app, cfg)
     usage_service.register(app, cfg)
+    clock_service.register(app, cfg)
     history_api.register(app, cfg)
     if not nodes_api.parse_cmd_key(cfg.cmd_key_hex):
         print("[CMD] AQUAGUARD_CMD_KEY is missing or all zero: node commands (add/rename/calibrate/replace/remove) are DISABLED.")

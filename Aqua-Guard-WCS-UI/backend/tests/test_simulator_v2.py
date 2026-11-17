@@ -81,8 +81,11 @@ def test_night_flow_in_a_single_weak_zone(cfg, admin):
     """One node on the main supply (the real installation) finds a slow constant leak: water is still flowing at 03:00."""
     start = DAY0 + 1 * 3600 + 30 * MIN
     leaks = [{"part": "p2", "lpm": 0.6, "start": 0}]
+    with database.db_session() as c:       # this short run (2 h 40 min) uses its own night window for the zone: a per-zone override of the quiet hours (pipeline id 1)
+        c.execute("INSERT INTO usage_settings (scope, json) VALUES (?,?)", ("zone:1:zone:flow1", '{"quiet_start":"02:00","quiet_end":"04:00"}'))
     _, z, al, _ = scenario(cfg, admin, nd.main_only(), start, 2 * 3600 + 40 * MIN, leaks, step=5)
     f = z["zone:flow1"]
+    assert f["timeRules"]["source"]["quietStart"] == "zone" and f["settings"]["nightStart"] == "02:00"
     assert f["class"] == "weak" and f["status"] in ("suspected", "confirmed") and any(r["rule"] == "night_flow" and r["level"] for r in f["rules"])
     assert [a["zone_id"] for a in al] == ["zone:flow1"]
 

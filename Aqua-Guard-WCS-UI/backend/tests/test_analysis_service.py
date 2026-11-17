@@ -274,8 +274,8 @@ def test_weak_zone_progress_names_the_night_window_and_the_continuous_limit(cfg,
     z = zone(run(cfg, T0 + 6 * MIN), "zone:flow2")                                     # after node 2 the zone has an outlet: weak
     assert z["class"] == "weak"
     texts = {r["rule"]: r["progress"]["text"] for r in z["rules"]}
-    assert "outside window (02:00-04:00)" in texts["night_flow"]
-    assert "of 6 h" in texts["continuous_flow"] and z["settings"]["nightStart"] == "02:00" and z["settings"]["continuousSuspectMin"] == 360
+    assert "outside window (22:00-05:00)" in texts["night_flow"]               # the quiet hours of the usage defaults (one source of truth)
+    assert "of 6 h" in texts["continuous_flow"] and z["settings"]["nightStart"] == "22:00" and z["settings"]["continuousSuspectMin"] == 360
 
 
 def test_demo_mode_suspects_after_one_minute_confirms_after_three_tags_alerts_and_expires(cfg, admin, two_nodes):

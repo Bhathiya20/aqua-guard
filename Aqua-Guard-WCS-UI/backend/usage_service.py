@@ -39,14 +39,17 @@ def get_defaults(conn) -> dict:
     return out
 
 
-def node_profile(conn, ref: int, now_s: float):
-    """-> (effective profile, override, demo) for one node.  demo = {'until': epoch, 'quiet': bool} while it is on."""
+def node_profile(conn, ref: int, now_s: float, clock=None):
+    """-> (effective profile, override, demo) for one node.  demo = {'until': epoch, 'quiet': bool} while the per-node demo is on.
+    The demo clock (day / night) is NOT part of the profile: it is handed to `classify` and only changes how "now" is read."""
     defaults = get_defaults(conn)
     override, _, _ = _load(conn, f"node:{ref}")
     p = U.resolve(defaults, override)
     demo, _, _ = _load(conn, f"demo:{ref}")
     if demo and demo.get("until", 0) > now_s:
         p = U.demo_profile(p, int(demo.get("from", now_s)) if demo.get("quiet") else None, int(demo["until"]) if demo.get("quiet") else None)
+        if clock is not None and clock.night:
+            p["allow_24h"] = False                       # demo_profile switches the night rule off when no night test was asked for; the clock says NIGHT
         return p, override, demo
     return p, override, None
 
@@ -93,13 +96,15 @@ def _text(n, cls, p, in_demo=False) -> str:
 
 
 def run_usage(conn, now: datetime | None = None):
+    import clock_service
     now = now or utc_now()
     now_s = now.timestamp()
     off = _site_offset(now)
     ts = fmt_ts(now)
+    clk = clock_service.load_clock(conn, now_s)                     # demo clock: day / night as simulated (alerts raised meanwhile are tagged demo)
     for n in conn.execute("SELECT id, number, name, out_of_service FROM nodes WHERE type='flow' AND state='paired'").fetchall():
         ref = n["id"]
-        p, _, demo = node_profile(conn, ref, now_s)
+        p, _, demo = node_profile(conn, ref, now_s, clk)
         run, row = _load_run(conn, ref)
         since = run.processed_until if run.processed_until else now_s - REPLAY_S
         rows = conn.execute("SELECT measured_at, flow_lpm FROM flow_samples WHERE node_ref=? AND anomaly=0 AND measured_at>? ORDER BY measured_at LIMIT 3000",
@@ -108,11 +113,11 @@ def run_usage(conn, now: datetime | None = None):
         samples = [s for s in samples if s[0] > since]
         run = U.advance(run, samples, p)
         last_lpm = samples[-1][1] if samples else (row["last_lpm"] if row else None)
-        cls = U.classify(run, now_s, p, off)
+        cls = U.classify(run, now_s, p, off, clk)
         status = "OUT_OF_SERVICE" if n["out_of_service"] else cls["status"]
         alert = conn.execute("SELECT * FROM alerts WHERE alert_key=? AND active=1", (f"USAGE:{ref}",)).fetchone()
         alert_id = alert["id"] if alert else None
-        in_demo = demo is not None
+        in_demo = demo is not None or clk.forced
         if status in RANK:
             msg = _text(n, cls, p, in_demo)
             if alert is None:
@@ -155,14 +160,16 @@ def profile_summary(p: dict) -> str:
 
 
 def live_all(conn, now: datetime | None = None) -> list:
+    import clock_service
     now = now or utc_now()
     now_s = now.timestamp()
     off = _site_offset(now)
+    clk = clock_service.load_clock(conn, now_s)
     out = []
     for n in conn.execute("SELECT id, number, name, out_of_service FROM nodes WHERE type='flow' AND state='paired' ORDER BY number, id").fetchall():
-        p, override, demo = node_profile(conn, n["id"], now_s)
+        p, override, demo = node_profile(conn, n["id"], now_s, clk)
         run, row = _load_run(conn, n["id"])
-        cls = U.classify(run, now_s, p, off)
+        cls = U.classify(run, now_s, p, off, clk)
         if n["out_of_service"]:
             cls = dict(cls, status="OUT_OF_SERVICE", tFlowS=None, next=None)
         out.append({"nodeRef": n["id"], "number": n["number"], "name": n["name"] or "", "label": _label(n), "preset": p["preset"] if demo is None else "demo",
@@ -262,7 +269,7 @@ def register(app, cfg):
             if n is None or n["type"] != "flow":
                 return jsonify(error="Flow node not found"), 404
             now = utc_now()
-            p, override, demo = node_profile(conn, ref, now.timestamp())
+            p, override, demo = node_profile(conn, ref, now.timestamp(), __import__('clock_service').load_clock(conn, now.timestamp()))
             eff = U.resolve(get_defaults(conn), override)
             _, by, at = _load(conn, f"node:{ref}")
             live = next((x for x in live_all(conn, now) if x["nodeRef"] == ref), None)

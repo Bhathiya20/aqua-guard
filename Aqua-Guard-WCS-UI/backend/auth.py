@@ -19,7 +19,7 @@ import secrets
 import time
 from functools import wraps
 
-from flask import current_app, g, jsonify, request
+from flask import current_app, g, has_request_context, jsonify, request
 
 from database import db_session, get_db
 
@@ -32,7 +32,7 @@ def _hash(token: str) -> str:
 
 
 def client_ip() -> str:
-    return request.remote_addr or ""
+    return (request.remote_addr or "") if has_request_context() else ""        # background jobs (e.g. the demo clock switching itself off) have no request
 
 
 def audit(conn, action: str, detail: str = "", user=None, email: str | None = None):

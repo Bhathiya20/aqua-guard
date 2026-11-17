@@ -395,7 +395,7 @@ def _m12_balance_thresholds(conn):
 
 def _m13_usage_and_history(conn):
     """Per-node usage profiles (duration detector) and the resolved-history fields of alerts; additive.
-    usage_settings: scope 'default' | 'node:<ref>' | 'demo:<ref>' -> JSON.  usage_state: the running flow of one node (restart safe)."""
+    usage_settings: scope 'default' | 'node:<ref>' | 'demo:<ref>' | 'zone:<pipeline>:<zone>' (time rules) | 'demo_clock' -> JSON.  usage_state: the running flow of one node (restart safe)."""
     _script(conn, """
     CREATE TABLE usage_settings (
         scope TEXT PRIMARY KEY, json TEXT NOT NULL, updated_by TEXT, updated_at TEXT

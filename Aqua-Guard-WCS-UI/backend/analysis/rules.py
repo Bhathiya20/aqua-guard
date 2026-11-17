@@ -31,6 +31,8 @@ class ZoneParams:
     night_min_buckets: int = 20
     night_smooth: int = 5                    # buckets averaged inside the window before taking the minimum
     tz_offset_min: int = 0                   # minutes east of UTC of the site
+    clock_mode: str = "auto"                 # demo clock: auto (real time) | day | night - only changes how the rules read "now"
+    clock_since: float | None = None         # epoch at which the forced state began (the start of the simulated night)
     continuous_suspect_h: float = 6.0
     continuous_confirm_h: float = 12.0
     continuous_min_lpm: float = 0.05
@@ -160,24 +162,37 @@ def balance_rule(zone, final: list, params: ZoneParams) -> RuleResult:
 
 # ---------------------------------------------------------------- weak zone: minimum night flow
 def _night_window(now: int, p: ZoneParams):
-    """(start, end) of the most recent night window that has started (local time = UTC + tz_offset)."""
+    """(start, end) of the most recent night window that has started (local time = UTC + tz_offset).  The window may cross midnight (22:00-05:00)."""
     off = p.tz_offset_min * 60
     local = now + off
     day = local - (local % 86400)
     start, end = day + p.night_start_min * 60, day + p.night_end_min * 60
+    if end <= start:                                      # crosses midnight: ends the next morning
+        end += 86400
     if local < start:                                     # tonight has not started yet: use last night
         start, end = start - 86400, end - 86400
     return start - off, end - off
 
 
+FORCED_CONFIRM_BUCKETS = 3                                # demo clock NIGHT: night flow is "confirmed" after this many complete minutes above the threshold
+
+
 def night_rule(zone, final: list, now: int, params: ZoneParams) -> RuleResult:
     p = params.for_zone(zone.id)
-    ws, we = _night_window(now, p)
+    rng = f"{hhmm(p.night_start_min)}-{hhmm(p.night_end_min)}"
+    forced = p.clock_mode == "night" and p.clock_since is not None
+    if p.clock_mode == "day":                             # demo clock DAY: the zone is judged as if it were outside the quiet hours: nothing to report
+        return RuleResult("night_flow", 0, True, "", _prog(f"Night flow: demo clock = DAY (simulated), not evaluated ({rng})"))
+    if forced:                                            # demo clock NIGHT: the window starts when the clock was switched; a short run is enough to show it
+        ws, we = int(p.clock_since), int(p.clock_since) + 86400
+        p = ZoneParams(**{k: getattr(p, k) for k in p.__dataclass_fields__})
+        p.night_min_buckets, p.night_smooth, p.night_min_coverage = 1, 1, 0.0
+    else:
+        ws, we = _night_window(now, p)
     inw = [b for b in final if ws <= b.ts < we]
     expected = max(1, int((min(we, now) - ws) // p.bucket_s))
     comp = [b for b in inw if b.complete]
     over = now < we
-    rng = f"{hhmm(p.night_start_min)}-{hhmm(p.night_end_min)}"
     if len(comp) < p.night_min_buckets or len(comp) / expected < p.night_min_coverage:
         txt = (f"Night flow: window {rng} running, {len(comp)} of {p.night_min_buckets} complete minutes collected" if over
                else f"Night flow: outside window ({rng}); last night had too little complete data to judge")
@@ -196,11 +211,12 @@ def night_rule(zone, final: list, now: int, params: ZoneParams) -> RuleResult:
     mnf, thr = best
     if mnf > thr:
         what = f"minimum night flow {mnf:.2f} L/min (threshold {thr:.2f}) between {p.night_start_min // 60:02d}:{p.night_start_min % 60:02d} and {p.night_end_min // 60:02d}:{p.night_end_min % 60:02d}"
-        return RuleResult("night_flow", SUSPECTED if over else CONFIRMED, False, what,
+        lvl = (CONFIRMED if len(comp) >= FORCED_CONFIRM_BUCKETS else SUSPECTED) if forced else (SUSPECTED if over else CONFIRMED)
+        return RuleResult("night_flow", lvl, False, what,
                           _prog(f"Night flow {mnf:.2f} L/min is above the threshold {thr:.2f} ({rng})", mnf, thr, "L/min", counting=True))
     txt = (f"Night flow: window {rng} running, minimum so far {mnf:.2f} L/min is within the threshold {thr:.2f}" if over
            else f"Night flow: outside window ({rng}); last night's minimum {mnf:.2f} L/min was within the threshold")
-    return RuleResult("night_flow", 0, not over, "", _prog(txt, mnf, thr, "L/min"))           # a finished night with no flow floor clears; a night in progress only holds
+    return RuleResult("night_flow", 0, (not over) or forced, "", _prog(txt, mnf, thr, "L/min"))           # a finished night with no flow floor clears; a night in progress only holds
 
 
 # ---------------------------------------------------------------- weak zone: continuous flow

@@ -15,6 +15,8 @@ clock restarts from that moment.  "24 h use allowed" switches the night rule off
 """
 from dataclasses import dataclass
 
+from .clock import REAL, Clock
+
 # Built-in presets (seconds).  "default" is only the factory value: the owner edits the real defaults on the settings page.
 PRESETS = {
     "default":    {"t_lim_s": 900, "t_max_s": 1800},                       # 15 min / 30 min
@@ -114,8 +116,13 @@ def _local(now: float, off: int) -> float:
     return now + off * 60
 
 
-def quiet_window(now: float, p: dict, off: int):
-    """(inside, start_epoch) of the quiet window that contains `now` (start_epoch None when outside)."""
+def quiet_window(now: float, p: dict, off: int, clock: Clock = REAL):
+    """(inside, start_epoch) of the quiet window that contains `now` (start_epoch None when outside).
+    The demo clock overrides the real time: NIGHT = inside since the clock was switched, DAY = outside."""
+    if clock.night:
+        return True, clock.since
+    if clock.day:
+        return False, None
     ep = p.get("_quiet_epoch")
     if ep:
         return (ep[0] <= now < ep[1]), (ep[0] if ep[0] <= now < ep[1] else None)
@@ -136,11 +143,16 @@ def _weekday(local_t: float) -> int:
     return int(local_t // 86400 + 3) % 7                  # 1970-01-01 was a Thursday (3 with Monday = 0)
 
 
-def schedule_state(now: float, p: dict, off: int):
-    """(inside, last_end_epoch): is an allowed long-use window active now, and when did the latest one end (None when none in the last 8 days)."""
+def schedule_state(now: float, p: dict, off: int, clock: Clock = REAL):
+    """(inside, last_end_epoch): is an allowed long-use window active now, and when did the latest one end (None when none in the last 8 days).
+    The demo clock decides too: DAY = inside the allowed window (when one is defined), NIGHT = outside it, ended when the clock was switched."""
     sch = p.get("schedule") or []
     if not sch:
         return False, None
+    if clock.day:
+        return True, None
+    if clock.night:
+        return False, clock.since
     ln = _local(now, off)
     m = int(ln % 86400) // 60
     inside, last_end = False, None
@@ -189,7 +201,7 @@ def advance(run: Run, samples, p: dict) -> Run:
     return run
 
 
-def classify(run: Run, now: float, p: dict, off_min: int) -> dict:
+def classify(run: Run, now: float, p: dict, off_min: int, clock: Clock = REAL) -> dict:
     """Status of the node right now.  -> {status, tFlowS, severity, next:{what, inS}|None, allowed, quiet}"""
     fresh = run.processed_until > 0 and now - run.processed_until <= FRESH_S
     if not fresh:
@@ -198,8 +210,8 @@ def classify(run: Run, now: float, p: dict, off_min: int) -> dict:
         return {"status": "NO_FLOW", "tFlowS": 0, "severity": None, "next": None, "allowed": False, "quiet": False}
     ref = max(now, run.processed_until)
     t_flow = ref - run.flow_since
-    quiet, q_start = quiet_window(now, p, off_min)
-    in_sched, last_end = schedule_state(now, p, off_min)
+    quiet, q_start = quiet_window(now, p, off_min, clock)
+    in_sched, last_end = schedule_state(now, p, off_min, clock)
     night = bool(quiet and not p["allow_24h"])
     out = {"tFlowS": int(t_flow), "allowed": in_sched, "quiet": night, "next": None}
     if night:
