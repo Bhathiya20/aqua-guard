@@ -448,7 +448,11 @@ def _m11_calibration(conn):
     """)
 
 
-MIGRATIONS = [(1, _m1_base), (2, _m2_telemetry), (3, _m3_auth), (4, _m4_registry), (5, _m5_v2), (6, _m6_leak_metrics), (7, _m7_tx_power), (8, _m8_out_of_range), (9, _m9_out_of_service), (10, _m10_demo_mode), (11, _m11_calibration), (12, _m12_balance_thresholds), (13, _m13_usage_and_history)]
+def _m14_calibration_recalc(conn):
+    _script(conn, "ALTER TABLE calibration_history ADD COLUMN recalculated_at TEXT;")       # set when the node's history was recalculated with the new value (admin option)
+
+
+MIGRATIONS = [(1, _m1_base), (2, _m2_telemetry), (3, _m3_auth), (4, _m4_registry), (5, _m5_v2), (6, _m6_leak_metrics), (7, _m7_tx_power), (8, _m8_out_of_range), (9, _m9_out_of_service), (10, _m10_demo_mode), (11, _m11_calibration), (12, _m12_balance_thresholds), (13, _m13_usage_and_history), (14, _m14_calibration_recalc)]
 
 
 def init_db(admin_email: str = "admin@aquaguard.com", admin_password: str = "") -> str | None:

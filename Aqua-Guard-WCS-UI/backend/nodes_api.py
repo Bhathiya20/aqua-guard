@@ -136,7 +136,7 @@ def register(app, cfg):
         day = fmt_ts(now.replace(hour=0, minute=0, second=0, microsecond=0))
         week = fmt_ts(now - timedelta(days=7))
         day, week = usage_reset.clamp(conn, day, now.timestamp()), usage_reset.clamp(conn, week, now.timestamp())      # demo "Reset usage": count from the baseline
-        last = conn.execute("SELECT flow_lpm, cum_pulses, measured_at, received_at FROM flow_samples WHERE node_ref=? AND anomaly=0 ORDER BY measured_at DESC, id DESC LIMIT 1", (n["id"],)).fetchone()
+        last = conn.execute("SELECT flow_lpm, cum_pulses, measured_at, received_at, pulses_per_liter_x10 FROM flow_samples WHERE node_ref=? AND anomaly=0 ORDER BY measured_at DESC, id DESC LIMIT 1", (n["id"],)).fetchone()
         use = conn.execute("SELECT COALESCE(SUM(CASE WHEN measured_at>=? THEN delta_pulses*10.0/pulses_per_liter_x10 END),0) AS today,"
                            " COALESCE(SUM(delta_pulses*10.0/pulses_per_liter_x10),0) AS week FROM flow_samples WHERE node_ref=? AND measured_at>=? AND anomaly=0",
                            (day, n["id"], week)).fetchone()
@@ -148,9 +148,23 @@ def register(app, cfg):
         tot = gap["missed"] + gap["got"]
         return {"flowLpm": round(last["flow_lpm"], 3) if (last is not None and fresh and state == "online") else None,
                 "lastFlowLpm": round(last["flow_lpm"], 3) if last is not None else None, "ageS": None if age is None else round(age, 1),
-                "cumPulses": last["cum_pulses"] if last is not None else None, "todayLiters": round(use["today"], 2), "weekLiters": round(use["week"], 2),
+                "cumPulses": last["cum_pulses"] if last is not None else None, "samplePpl": (last["pulses_per_liter_x10"] / 10.0) if last is not None else None, "todayLiters": round(use["today"], 2), "weekLiters": round(use["week"], 2),
                 "missedPackets24h": gap["missed"], "receivedPackets24h": gap["got"], "lossPct24h": round(100.0 * gap["missed"] / tot, 1) if tot else 0.0,
                 "gatewayOutagePackets24h": gap["outage"], "gatewayOutageMin24h": gap["outageMin"]}
+
+    def calibration_json(conn, n, live):
+        """Where the node's pulses-per-litre stands: the value, when it was calibrated, whether the node confirmed it (its newest reading carries it)
+        and whether older stored readings still use the previous value (until the admin recalculates the history)."""
+        if n["type"] != "flow":
+            return None
+        h = conn.execute("SELECT h.at, h.old_ppl_x10, h.new_ppl_x10, h.recalculated_at, c.status AS cmd FROM calibration_history h LEFT JOIN gateway_commands c ON c.id=h.command_id "
+                         "WHERE h.node_ref=? ORDER BY h.id DESC LIMIT 1", (n["id"],)).fetchone()
+        if h is None:
+            return {"ppl": (n["ppl_x10"] / 10.0) if n["ppl_x10"] else None, "calibrated": False, "at": None, "applied": None, "commandStatus": None, "earlierPpl": None, "earlierUsesOld": False}
+        new = h["new_ppl_x10"] / 10.0
+        seen = live["samplePpl"] if live else None
+        return {"ppl": new, "calibrated": True, "at": h["at"], "commandStatus": h["cmd"], "applied": None if seen is None else abs(seen - new) < 0.05,
+                "earlierPpl": (h["old_ppl_x10"] or 4500) / 10.0, "earlierUsesOld": h["recalculated_at"] is None and (h["old_ppl_x10"] or 4500) != h["new_ppl_x10"]}
 
     def node_json(conn, n, gw_state, now, gw_name=None):
         if n["state"] == "removed":
@@ -172,7 +186,7 @@ def register(app, cfg):
         return {"id": n["id"], "gatewayRef": n["gateway_ref"], "gatewayId": gw_name, "type": n["type"], "number": n["number"], "label": f"{'Rain' if n['type'] == 'rain' else 'Node'} {n['number']}",
                 "name": n["name"], "mac": gateway_v2.fmt_mac(n["mac"]), "state": state, "registryState": n["state"], "batteryMv": n["battery_mv"], "rssi": n["rssi"] or None,
                 "lastSeen": n["last_seen"], "pulsesPerLiter": (n["ppl_x10"] / 10.0) if n["ppl_x10"] else None, "txReduce": bool(n["tx_reduce"]), "txPowerDbm": (n["tx_dbm_x10"] or 85) / 10.0, "outOfService": bool(n["out_of_service"]),
-                "addedEpoch": n["added_epoch"], "live": live, "hardware": [{"mac": gateway_v2.fmt_mac(h["mac"]), "firstSeen": h["first_seen"], "lastSeen": h["last_seen"]} for h in hist]}
+                "addedEpoch": n["added_epoch"], "live": live, "calibration": calibration_json(conn, n, live), "hardware": [{"mac": gateway_v2.fmt_mac(h["mac"]), "firstSeen": h["first_seen"], "lastSeen": h["last_seen"]} for h in hist]}
 
     def gateway_json(conn, gw, now):
         st = gateway_v2.gateway_state(cfg, gw, now)

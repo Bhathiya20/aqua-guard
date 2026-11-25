@@ -4,7 +4,9 @@ A session pauses leak detection for its nodes (see analysis_service.compute) and
 Volumes come from cumulative pulse counters only (boot_id + cum_pulses), so lost packets never matter.  Reads: any signed-in user;
 mutations: administrator + CSRF.  Applying goes through the existing signed calibrate command (works without TLS).
 """
+import sqlite3
 from datetime import timedelta
+from pathlib import Path
 
 from flask import g, jsonify, request
 
@@ -12,7 +14,7 @@ import auth
 import calibration as cal
 import gateway_v2
 import nodes_api
-from database import db_session
+from database import db_session, get_db
 from ingest import fmt_ts, parse_ts, utc_now
 from pipeline import presets
 from pipeline_api import store_pipeline
@@ -428,6 +430,43 @@ def register(app, cfg):
             return jsonify(history=[{"id": r["id"], "at": r["at"], "user": r["user"], "oldPpl": (r["old_ppl_x10"] or DEFAULT_PPL_X10) / 10.0, "newPpl": r["new_ppl_x10"] / 10.0,
                                      "runs": r["runs"], "spreadPct": r["spread_pct"], "source": r["source"], "method": r["method"], "sessionId": r["session_id"],
                                      "commandStatus": r["cmd_status"]} for r in rows])
+
+    @app.post("/api/nodes/<int:ref>/recalculate-history")
+    @auth.require_role("admin")
+    def cal_recalculate(ref):
+        """Admin option: re-express the node's STORED history with one pulses-per-litre value.  The raw pulse counts are never changed; every sample's
+        pulses_per_liter and its flow rate (flow = pulses / ppl) are rewritten, so volumes become delta_pulses / new ppl.  The database is backed up first."""
+        body = request.get_json(silent=True) or {}
+        now = _now()
+        rd = get_db()
+        try:
+            n = rd.execute("SELECT id, number, ppl_x10 FROM nodes WHERE id=? AND type='flow' AND state!='removed'", (ref,)).fetchone()
+            if n is None:
+                return fail("not_found", "Flow node not found.", 404)
+            last = rd.execute("SELECT new_ppl_x10 FROM calibration_history WHERE node_ref=? ORDER BY id DESC LIMIT 1", (ref,)).fetchone()
+            try:
+                target = int(round(float(body["ppl"]) * 10)) if body.get("ppl") not in (None, "") else (last["new_ppl_x10"] if last else n["ppl_x10"])
+            except (TypeError, ValueError):
+                return fail("bad_calibration", "Pulses per litre must be a number.", 400)
+            if not target or not 100 <= target <= 60000:
+                return fail("bad_calibration", "That value is outside the allowed range (10 to 6000 pulses per litre).", 400)
+            bdir = Path(cfg.db_path).parent / "backups"
+            bdir.mkdir(parents=True, exist_ok=True)
+            bfile = bdir / f"aquaguard-before-recalc-node{n['number']}-{now.strftime('%Y%m%d-%H%M%S')}.db"
+            dst = sqlite3.connect(str(bfile))
+            try:
+                rd.backup(dst)                                                     # consistent copy of the whole database, before anything is changed
+            finally:
+                dst.close()
+        finally:
+            rd.close()
+        with db_session() as conn:
+            todo = conn.execute("SELECT COUNT(*) c FROM flow_samples WHERE node_ref=? AND pulses_per_liter_x10<>?", (ref, target)).fetchone()["c"]
+            conn.execute("UPDATE flow_samples SET flow_lpm=MIN(flow_lpm*pulses_per_liter_x10*1.0/?, 120.0), pulses_per_liter_x10=? WHERE node_ref=? AND pulses_per_liter_x10<>?",
+                         (target, target, ref, target))
+            conn.execute("UPDATE calibration_history SET recalculated_at=? WHERE node_ref=?", (fmt_ts(now), ref))
+            auth.audit(conn, "calibration_recalculate", f"node={n['number']} ppl={target / 10.0} samples={todo} backup={bfile.name}", user=g.user)
+        return jsonify(ok=True, samples=todo, ppl=target / 10.0, backup=bfile.name)
 
     @app.post("/api/nodes/<int:ref>/calibrations/<int:hid>/revert")
     @auth.require_role("admin")
