@@ -34,3 +34,4 @@ logs/
 nodes/*/secret.txt
 nodes/*/sticker.*
 .demo/
+**/database/backups/
