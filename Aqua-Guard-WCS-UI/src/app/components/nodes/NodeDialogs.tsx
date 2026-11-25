@@ -1,6 +1,7 @@
 // Dialogs of the Nodes page: add, rename, replace, remove, calibrate, TX power, link trend.
 import { useEffect, useState, type ReactNode } from "react";
 import { ExternalLink, Info } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
@@ -143,6 +144,32 @@ export function TxPowerDialog({ node, onClose, onDone }: { node: NodeV2 | null; 
 }
 
 /** In-page confirmation (no window.confirm). */
+/** Admin option: re-express a node's stored history with its calibrated pulses-per-litre (raw pulses never change; the database is backed up first). */
+export function RecalcDialog({ node, onClose, onDone }: { node: NodeV2 | null; onClose: () => void; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  if (!node) return null;
+  const c = node.calibration;
+  const go = async () => {
+    setBusy(true);
+    try { const r = await v2.recalculateHistory(node.id); toast.success(`${r.samples} readings recalculated with ${r.ppl} p/L. Backup: ${r.backup}`); onDone(); onClose(); }
+    catch (e) { toast.error(e instanceof Error ? e.message : "Could not recalculate"); } finally { setBusy(false); }
+  };
+  return (
+    <AlertDialog open onOpenChange={(o) => { if (!o && !busy) onClose(); }}>
+      <AlertDialogContent data-testid="recalc-dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Recalculate history of {nodeTitle(node)}?</AlertDialogTitle>
+          <AlertDialogDescription>Earlier readings were stored with {c?.earlierPpl ?? "the old"} p/L. This re-expresses them with the calibrated {c?.ppl} p/L, so past volumes and flows match the new calibration. The raw pulse counts are not changed, and the database is backed up first. Past leak events and finished zone totals keep the values they had.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button>
+          <Button disabled={busy} onClick={go} data-testid="recalc-confirm">Recalculate history</Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 export function RemoveDialog({ node, onClose, onDone }: { node: NodeV2 | null; onClose: () => void; onDone: () => void }) {
   const { state, run, reset } = useCommand();
   useEffect(() => { reset(); }, [node?.id]);   // eslint-disable-line react-hooks/exhaustive-deps

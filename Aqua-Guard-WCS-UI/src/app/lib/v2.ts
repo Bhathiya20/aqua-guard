@@ -16,15 +16,16 @@ export interface GatewaysResponse {
   mqtt: { tls: boolean; host: string; port: number; remoteAddAllowed: boolean };
   commandsEnabled: boolean;
 }
+export interface NodeCalibration { ppl: number | null; calibrated: boolean; at: string | null; applied: boolean | null; commandStatus: string | null; earlierPpl: number | null; earlierUsesOld: boolean }
 export interface NodeLive {
-  flowLpm: number | null; lastFlowLpm: number | null; ageS: number | null; cumPulses: number | null;
+  samplePpl?: number | null; flowLpm: number | null; lastFlowLpm: number | null; ageS: number | null; cumPulses: number | null;
   todayLiters: number; weekLiters: number; missedPackets24h: number; receivedPackets24h: number; lossPct24h: number; gatewayOutagePackets24h?: number; gatewayOutageMin24h?: number;
 }
 export interface NodeV2 {
   id: number; gatewayRef: number; gatewayId?: string | null; type: "flow" | "rain"; number: number; label: string; name: string; mac: string;
   state: "online" | "offline" | "unknown" | "pending" | "removed" | "out_of_service"; registryState: string; outOfService?: boolean;
   batteryMv: number | null; rssi: number | null; lastSeen: string | null; pulsesPerLiter: number | null; txReduce: boolean; txPowerDbm?: number;
-  addedEpoch: number | null; live: NodeLive | null; hardware: Array<{ mac: string; firstSeen: string; lastSeen: string }>;
+  addedEpoch: number | null; live: NodeLive | null; calibration?: NodeCalibration | null; hardware: Array<{ mac: string; firstSeen: string; lastSeen: string }>;
 }
 export interface NearbyNode { mac: string; type: "flow" | "rain"; rssi: number | null; channel: number | null; lastSeen: string }
 export type CommandStatus = "queued" | "sent" | "ok" | "error" | "timeout" | string;
@@ -195,6 +196,7 @@ export const v2 = {
   patchNode: (ref: number, b: { name?: string; pulsesPerLiter?: number; txReduce?: boolean; txPowerDbm?: 8.5 | 11 | 13 | 15 }) => request<CommandAck>(`/nodes/${ref}${q({ wait: 0 })}`, { method: "PATCH", body: body(b) }),
   setDemo: (pid: number, on: boolean) => request<{ ok: boolean; demo: boolean; demoUntil: number | null }>(`/pipelines/${pid}/demo`, { method: "PUT", body: body({ on }) }),
   setOutOfService: (ref: number, outOfService: boolean) => request<{ ok: boolean; outOfService: boolean }>(`/nodes/${ref}/service`, { method: "PUT", body: body({ outOfService }) }),
+  recalculateHistory: (ref: number) => request<{ ok: boolean; samples: number; ppl: number; backup: string }>(`/nodes/${ref}/recalculate-history`, { method: "POST", body: body({}) }),
   removeNode: (ref: number) => request<CommandAck>(`/nodes/${ref}${q({ wait: 0 })}`, { method: "DELETE" }),
   usage: (ref: number, bucket: "hour" | "day" | "week" | "month", days: number) => request<{ nodeRef: number; bucket: string; usage: UsagePoint[] }>(`/nodes/${ref}/usage${q({ bucket, days })}`),
 
@@ -262,7 +264,14 @@ export const v2 = {
 export const BATTERY_PLAUSIBLE_MV: [number, number] = [4000, 9500];             // keep in step with the backend (battery_min/max_plausible_mv)
 export const batteryImplausible = (mv: number | null | undefined) => mv !== null && mv !== undefined && (mv < BATTERY_PLAUSIBLE_MV[0] || mv > BATTERY_PLAUSIBLE_MV[1]);
 export const DEFAULT_PPL = 450;
-export const calibrationText = (ppl: number | null | undefined) => (ppl ? `${ppl} p/L` : `${DEFAULT_PPL} p/L (default)`);
+const calDay = (at: string) => { const d = new Date(at.replace(" ", "T") + "Z"); return isNaN(d.getTime()) ? at : d.toLocaleDateString("en-GB", { timeZone: "Asia/Colombo", day: "2-digit", month: "short" }); };
+/** "480 p/L (calibrated 12 Nov)"; "450 p/L (default)" until calibrated; a calibrated value the node has not confirmed yet says so. */
+export const calibrationText = (ppl: number | null | undefined, cal?: NodeCalibration | null) => {
+  const shown = cal?.calibrated && cal.ppl ? cal.ppl : ppl;
+  if (!shown) return `${DEFAULT_PPL} p/L (default)`;
+  if (!cal?.calibrated || !cal.at) return `${shown} p/L`;
+  return `${shown} p/L (calibrated ${calDay(cal.at)}${cal.applied === false ? ", node not confirmed yet" : ""})`;
+};
 export const WEAK_LOSS_PCT = 10, WEAK_RSSI_DBM = -80;
 /** Reasons why a node's radio link is weak (empty = fine): more than 10 % of its readings never arrived, or the signal is below -80 dBm. */
 export function weakLinkReasons(n: { rssi: number | null; live: { lossPct24h: number } | null }): string[] {

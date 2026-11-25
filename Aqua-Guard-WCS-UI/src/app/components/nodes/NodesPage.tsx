@@ -12,7 +12,7 @@ import { ageSince, fmtAge, fmtTime, fmtUptime, usePolling } from "../../lib/useP
 import { batteryImplausible, batteryText, calibrationText, rssiText, lpm, liters, nodeTitle, v2, weakLinkReasons, type GatewayV2, type NodeV2, type UsageLive } from "../../lib/v2";
 import { ConnectionBanner, EmptyState, Loading, PageHeader, Pill, deviceTone, stateText } from "../common";
 import { NodeUsageDialog } from "../usage/NodeUsageDialog";
-import { AddNodeDialog, CalibrateDialog, LinkDialog, RemoveDialog, RenameDialog, ReplaceDialog, TxPowerDialog, txText } from "./NodeDialogs";
+import { AddNodeDialog, CalibrateDialog, LinkDialog, RecalcDialog, RemoveDialog, RenameDialog, ReplaceDialog, TxPowerDialog, txText } from "./NodeDialogs";
 
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
   return <div className="flex justify-between gap-3 py-0.5 text-sm"><span className="text-muted-foreground">{k}</span><span className="font-mono text-right break-all">{v}</span></div>;
@@ -58,7 +58,7 @@ function BatteryCell({ mv, lowMv = 6600 }: { mv: number | null; lowMv?: number }
   return <span className={`inline-flex items-center gap-1 ${low ? "text-red-600 font-semibold" : ""}`}>{low ? <BatteryWarning className="h-3.5 w-3.5" /> : <BatteryFull className="h-3.5 w-3.5" />}{batteryText(mv)}</span>;
 }
 
-interface Actions { onUsage?: (n: NodeV2) => void; usage?: Map<number, UsageLive>; onRename: (n: NodeV2) => void; onCalibrate: (n: NodeV2) => void; onTx?: (n: NodeV2) => void; onService?: (n: NodeV2) => void; onReplace: (n: NodeV2) => void; onRemove: (n: NodeV2) => void; onTrend?: (n: NodeV2) => void }
+interface Actions { onUsage?: (n: NodeV2) => void; usage?: Map<number, UsageLive>; onRename: (n: NodeV2) => void; onCalibrate: (n: NodeV2) => void; onRecalc?: (n: NodeV2) => void; onTx?: (n: NodeV2) => void; onService?: (n: NodeV2) => void; onReplace: (n: NodeV2) => void; onRemove: (n: NodeV2) => void; onTrend?: (n: NodeV2) => void }
 
 function ActionButtons({ n, a, admin }: { n: NodeV2; a: Actions; admin: boolean }) {
   if (!admin) return <span className="text-xs text-muted-foreground">view only</span>;
@@ -70,6 +70,7 @@ function ActionButtons({ n, a, admin }: { n: NodeV2; a: Actions; admin: boolean 
       <DropdownMenuContent align="end">
         <DropdownMenuItem onSelect={() => a.onRename(n)}><Pencil className="mr-2 h-3.5 w-3.5" />Rename</DropdownMenuItem>
         {n.type === "flow" && <DropdownMenuItem onSelect={() => a.onCalibrate(n)}><Ruler className="mr-2 h-3.5 w-3.5" />Calibrate</DropdownMenuItem>}
+        {n.type === "flow" && a.onRecalc && n.calibration?.earlierUsesOld && <DropdownMenuItem data-testid={`menu-recalc-${n.number}`} onSelect={() => a.onRecalc!(n)}><Ruler className="mr-2 h-3.5 w-3.5" />Recalculate history…</DropdownMenuItem>}
         {n.type === "flow" && a.onUsage && <DropdownMenuItem data-testid={`menu-usage-${n.number}`} onSelect={() => a.onUsage!(n)}><Gauge className="mr-2 h-3.5 w-3.5" />Usage settings</DropdownMenuItem>}
         {n.type === "flow" && a.onTx && <DropdownMenuItem data-testid={`menu-tx-${n.number}`} onSelect={() => a.onTx!(n)}><Zap className="mr-2 h-3.5 w-3.5" />TX power</DropdownMenuItem>}
         {a.onService && <DropdownMenuItem data-testid={`menu-service-${n.number}`} onSelect={() => a.onService!(n)}><Wrench className="mr-2 h-3.5 w-3.5" />{n.outOfService ? "Back in service" : "Out of service / maintenance"}</DropdownMenuItem>}
@@ -139,7 +140,7 @@ export function NodesTable({ nodes, a, admin }: { nodes: NodeV2[]; a: Actions; a
                 <TableCell><BatteryCell mv={n.batteryMv} /></TableCell>
                 <TableCell className="font-mono text-xs">{n.state === "online" ? rssiText(n.rssi) : "—"}</TableCell>
                 <TableCell className="font-mono text-xs" data-testid={`tx-${n.number}`}>{n.type === "rain" ? "—" : txText(n)}</TableCell>
-                <TableCell className="font-mono text-xs">{n.type === "rain" ? "—" : calibrationText(n.pulsesPerLiter)}</TableCell>
+                <TableCell className="font-mono text-xs">{n.type === "rain" ? "—" : calibrationText(n.pulsesPerLiter, n.calibration)}</TableCell>
                 <TableCell className="text-xs" data-testid={`usage-profile-${n.number}`}>{n.type === "rain" ? "—" : <UsageProfileCell u={a.usage?.get(n.id)} />}</TableCell>
                 <TableCell className="text-xs">{missing(n, a.onTrend)}</TableCell>
                 </>}
@@ -169,7 +170,7 @@ export function NodesTable({ nodes, a, admin }: { nodes: NodeV2[]; a: Actions; a
                 <Row k="Battery" v={<BatteryCell mv={n.batteryMv} />} />
                 <Row k="RSSI" v={n.state === "online" ? rssiText(n.rssi) : "—"} />
                 <Row k="TX power" v={n.type === "rain" ? "—" : txText(n)} />
-                <Row k="Calibration" v={n.type === "rain" ? "—" : calibrationText(n.pulsesPerLiter)} />
+                <Row k="Calibration" v={n.type === "rain" ? "—" : calibrationText(n.pulsesPerLiter, n.calibration)} />
                 {n.type === "flow" && <Row k="Usage profile" v={<UsageProfileCell u={a.usage?.get(n.id)} />} />}
                 <Row k="Missing (24 h)" v={missing(n, a.onTrend)} />
               </div>
@@ -193,6 +194,7 @@ export function NodesPage() {
   const [txn, setTxn] = useState<NodeV2 | null>(null);
   const [replace, setReplace] = useState<NodeV2 | null>(null);
   const [remove, setRemove] = useState<NodeV2 | null>(null);
+  const [recalc, setRecalc] = useState<NodeV2 | null>(null);
   const [adding, setAdding] = useState(false);
   const [trend, setTrend] = useState<NodeV2 | null>(null);
   const [usageNode, setUsageNode] = useState<NodeV2 | null>(null);
@@ -247,10 +249,10 @@ export function NodesPage() {
                 <div key={g.id} className="space-y-2" data-testid={`gateway-group-${g.gatewayId}`}>
                   <h3 className="text-sm font-semibold text-muted-foreground">Gateway {g.gatewayId} · {g.state} · {mine.length} node{mine.length === 1 ? "" : "s"}</h3>
                   {mine.length === 0 ? <Card><CardContent><EmptyState>No nodes on this gateway.</EmptyState></CardContent></Card>
-                    : <NodesTable nodes={mine} admin={admin} a={{ onRename: setRename, onCalibrate: setCalib, onTx: setTxn, onService: toggleService, onReplace: setReplace, onRemove: setRemove, onTrend: setTrend, onUsage: setUsageNode, usage: usageBy }} />}
+                    : <NodesTable nodes={mine} admin={admin} a={{ onRename: setRename, onCalibrate: setCalib, onRecalc: admin ? setRecalc : undefined, onTx: setTxn, onService: toggleService, onReplace: setReplace, onRemove: setRemove, onTrend: setTrend, onUsage: setUsageNode, usage: usageBy }} />}
                 </div>);
             })
-            : <NodesTable nodes={list} admin={admin} a={{ onRename: setRename, onCalibrate: setCalib, onTx: setTxn, onService: toggleService, onReplace: setReplace, onRemove: setRemove, onTrend: setTrend, onUsage: setUsageNode, usage: usageBy }} />}
+            : <NodesTable nodes={list} admin={admin} a={{ onRename: setRename, onCalibrate: setCalib, onRecalc: admin ? setRecalc : undefined, onTx: setTxn, onService: toggleService, onReplace: setReplace, onRemove: setRemove, onTrend: setTrend, onUsage: setUsageNode, usage: usageBy }} />}
       </section>
 
       <section className="space-y-2">
@@ -273,6 +275,7 @@ export function NodesPage() {
       <ReplaceDialog node={replace} gateway={allGw.find((g) => g.id === replace?.gatewayRef) ?? gw} tlsOk={tlsOk} onClose={() => setReplace(null)} onDone={after} />
       <NodeUsageDialog node={usageNode} onClose={() => setUsageNode(null)} onDone={usageLive.refresh} />
       <LinkDialog node={trend} onClose={() => setTrend(null)} />
+      <RecalcDialog node={recalc} onClose={() => setRecalc(null)} onDone={after} />
       <RemoveDialog node={remove} onClose={() => setRemove(null)} onDone={after} />
     </div>
   );

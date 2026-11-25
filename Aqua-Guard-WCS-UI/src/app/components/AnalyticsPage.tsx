@@ -5,6 +5,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { BarChart3, Download } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { CalibrationNote } from "./CalibrationNote";
 import { UsageResetNote } from "./UsageReset";
 import { ConnectionBanner, EmptyState, Loading, PageHeader, Pill } from "./common";
 import { fmtClock, fmtDayShort, fmtTime, usePolling } from "../lib/usePolling";
@@ -101,6 +102,7 @@ export function AnalyticsPage() {
         right={<div className="flex gap-2"><Button size="sm" variant="outline" disabled={!data || data.rows.length === 0} onClick={exportUsage}><Download className="mr-1.5 h-3.5 w-3.5" />Export usage CSV</Button>
           <Button size="sm" variant="outline" disabled={(leaks.data?.leaks.length ?? 0) === 0} onClick={exportLeaks}><Download className="mr-1.5 h-3.5 w-3.5" />Export leaks CSV</Button></div>} />
       <UsageResetNote full />
+      <CalibrationNote />
       <ConnectionBanner error={nodes.error || series.error} stale={nodes.stale || series.stale} onRetry={() => { nodes.refresh(); series.refresh(); }} />
 
       <div className="flex flex-wrap gap-2">
